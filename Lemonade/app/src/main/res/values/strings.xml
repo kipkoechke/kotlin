@@ -6,7 +6,7 @@
     <string name="tap_empty_glass">Tap the empty glass to start again</string>
     <!--   For content description   -->
     <string name="lemon_tree">Lemon tree</string>
-    <string name="Lemon">Lemon</string>
+    <string name="lemon">Lemon</string>
     <string name="glass_of_lemonade">Glass of lemonade</string>
     <string name="empty_glass">Empty glass</string>
 
