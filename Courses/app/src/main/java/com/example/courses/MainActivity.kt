@@ -66,8 +66,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun TopicCard(topic: Topic, modifier: Modifier = Modifier) {
-        Card() {
-            Row() {
+        Card {
+            Row {
                 Box {
                     Image(
                         painter = painterResource(topic.imageResourceId),
