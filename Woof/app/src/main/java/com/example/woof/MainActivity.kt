@@ -120,7 +120,14 @@ fun DogItem(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Card(modifier = modifier) {
-        Column() {
+        Column(
+            modifier = Modifier.animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        ) {
             Row(
                 modifier = modifier
                     .fillMaxWidth()
