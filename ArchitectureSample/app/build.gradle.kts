@@ -55,6 +55,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -70,24 +71,19 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
     // Arrow
-    //noinspection UseTomlInstead
-    implementation("io.arrow-kt:arrow-core:1.2.0")
-    //noinspection UseTomlInstead
-    implementation("io.arrow-kt:arrow-fix-coroutines:1.2.0")
+    implementation(libs.io.arrow.core)
+    implementation(libs.io.arrow.fx.coroutines)
+
     // Retrofit
-    //noinspection UseTomlInstead
-    implementation ("com.squareup.retrofit2:retrofit:2.9.0")
-    //noinspection UseTomlInstead
-    implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation (libs.com.retrofit)
+    implementation (libs.com.converter.gson)
+
     // Coil
-    //noinspection UseTomlInstead
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation(libs.io.coil.compose)
+
     // Dagger Hilt
-    //noinspection UseTomlInstead
-    implementation("com.google.dagger:hilt-android:2.51")
-    //noinspection UseTomlInstead
-    kapt("com.google.dagger:hilt-android-compiler:2.51")
-    //noinspection UseTomlInstead
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+    implementation(libs.com.hilt.android)
+    kapt(libs.com.hilt.android.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
 
 }
