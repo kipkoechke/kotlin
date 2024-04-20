@@ -1,6 +1,9 @@
 package com.example.architecturesample
 
+import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,10 +19,14 @@ import com.example.architecturesample.store.presentations.products_screen.Produc
 import com.example.architecturesample.ui.theme.ArchitectureSampleTheme
 import com.example.architecturesample.util.Event
 import com.example.architecturesample.util.EventBus
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.commons.io.comparator.LastModifiedFileComparator
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.File
+import java.util.Arrays
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @SuppressLint("Recycle")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
