@@ -21,7 +21,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.bellon.statussaver.CardsContent
 import com.bellon.statussaver.model.TabItem
 
 @Composable
