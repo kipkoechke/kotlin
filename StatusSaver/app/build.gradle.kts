@@ -59,6 +59,8 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.ui.desktop)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -67,15 +69,26 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    //
-    implementation("com.jsibbold:zoomage:1.3.1")
-    implementation("androidx.media3:media3-exoplayer:1.1.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.1.1")
-    implementation("androidx.media3:media3-ui:1.1.1")
-    implementation ("androidx.documentfile:documentfile:1.0.1")
-    implementation ("com.github.bumptech.glide:glide:4.15.1")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0-alpha01")
-
     // Coil
     implementation(libs.io.coil.compose)
+    implementation(libs.gson)
+    // Zoomage
+    implementation(libs.com.jsibbold.zoomage)
+
+    // DocumentFile
+    implementation(libs.androidx.documentfile)
+
+    // Media
+    implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.dash)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.exoplayer.smoothstreaming)
+
+    // Glide
+    implementation(libs.com.github.bumptech.glide)
+
+    // SwipeRefresh
+    implementation(libs.androidx.swiperefreshlayout)
 }
