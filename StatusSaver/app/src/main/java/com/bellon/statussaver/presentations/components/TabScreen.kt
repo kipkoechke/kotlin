@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalFoundationApi::class)
 
-package com.bellon.statussaver.presentations
+package com.bellon.statussaver.presentations.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -18,28 +15,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.bellon.statussaver.model.TabItem
+import com.bellon.statussaver.models.TabItem
 
 @Composable
-fun TabScreen(modifier: Modifier = Modifier) {
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
-    val tabItems = listOf(
-        TabItem(
-            title = "STATUS",
-            selectedIcon = Icons.Default.Favorite,
-            unselectedIcon = Icons.Default.Favorite
-        ),
-        TabItem(
-            title = "VIDEOS",
-            selectedIcon = Icons.Default.Info,
-            unselectedIcon = Icons.Default.Info
-        )
-    )
+fun TabScreen(
+    modifier: Modifier = Modifier,
+    tabItems: List<TabItem>,
+    content: @Composable (Int) -> Unit,
+) {
+    var selectedTabIndex by remember { mutableStateOf(0) }
     val pagerState = rememberPagerState {
         tabItems.size
     }
@@ -54,7 +43,9 @@ fun TabScreen(modifier: Modifier = Modifier) {
         selectedTabIndex = pagerState.currentPage
     }
 
-    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+    Column(modifier = modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp)) {
         TabRow(selectedTabIndex = selectedTabIndex) {
             tabItems.forEachIndexed { index, item ->
                 Tab(text = { Text(text = item.title) },
@@ -77,11 +68,7 @@ fun TabScreen(modifier: Modifier = Modifier) {
                 .fillMaxWidth()
                 .weight(1f)
         ) { page ->
-            when (page) {
-                0 -> CardsContent()
-                1 -> Text(text = "VIDEOS")
-            }
-
+            content(page)
         }
     }
 }
