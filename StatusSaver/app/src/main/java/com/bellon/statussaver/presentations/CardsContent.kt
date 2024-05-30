@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun CardsContent() {
+fun CardsContent(onNavigateToItemDetail: () -> Unit) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -22,7 +22,7 @@ fun CardsContent() {
             verticalItemSpacing = 10.dp
         ) {
             items(100) {
-                StatusCard()
+                StatusCard(onNavigateToStatusDetail =  onNavigateToItemDetail)
             }
         }
     }
