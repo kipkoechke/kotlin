@@ -1,6 +1,5 @@
 package com.bellon.statussaver.utils
 
-
 import android.content.ContentValues.TAG
 import android.net.Uri
 import android.os.Build
@@ -27,8 +26,12 @@ object Constants {
     val WHATSAPP_PATH_URI_ANDROID =
         Uri.parse("content://com.android.externalstorage.documents/document/primary%3AWhatsApp%2FMedia%2F.Statuses")
 
-    val WHATSAPP_PATH_URI_ANDROID_11 =
+        val WHATSAPP_PATH_URI_ANDROID_11 =
         Uri.parse("content://com.android.externalstorage.documents/document/primary%3AAndroid%2Fmedia%2Fcom.whatsapp%2FWhatsApp%2FMedia%2F.Statuses")
+//    val WHATSAPP_PATH_URI_ANDROID_11 =
+//        Uri.parse("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/.Statuses")
+
+
     val WHATSAPP_BUSINESS_PATH_URI_ANDROID =
         Uri.parse("content://com.android.externalstorage.documents/document/primary%3AWhatsApp%20Business%2FMedia%2F.Statuses")
     val WHATSAPP_BUSINESS_PATH_URI_ANDROID_11 =
@@ -43,6 +46,7 @@ object Constants {
         Log.d(TAG, "getWhatsappUri: $uri")
         return uri
     }
+
     fun getWhatsappBusinessUri(): Uri {
         val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WHATSAPP_BUSINESS_PATH_URI_ANDROID_11

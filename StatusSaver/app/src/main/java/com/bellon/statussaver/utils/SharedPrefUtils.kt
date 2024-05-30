@@ -3,6 +3,7 @@ package com.bellon.statussaver.utils
 import android.content.Context
 import android.content.SharedPreferences
 import com.bellon.statussaver.R
+
 object SharedPrefUtils {
     private lateinit var preferences: SharedPreferences
     private lateinit var editor: SharedPreferences.Editor
