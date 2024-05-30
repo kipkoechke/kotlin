@@ -1,3 +1,5 @@
+import org.gradle.api.initialization.resolve.RepositoriesMode.*
+
 pluginManagement {
     repositories {
         google {
@@ -11,11 +13,13 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
+        mavenLocal()
     }
 }
 

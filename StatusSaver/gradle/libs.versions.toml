@@ -1,4 +1,5 @@
 [versions]
+accompanistPermissions = "0.29.2"
 agp = "8.4.1"
 gson = "2.10.1"
 kotlin = "1.9.0"
@@ -12,11 +13,13 @@ composeBom = "2024.05.00"
 coil = "2.6.0"
 navigationCompose = "2.7.7"
 media3 = "1.3.1"
+storage = "1.5.5"
 zoomage = "1.3.1"
 documentFile = "1.0.1"
 glide = "4.16.0"
 swipeRefresh = "1.1.0"
 uiDesktop = "1.6.7"
+firebaseCrashlyticsBuildtools = "3.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -61,6 +64,8 @@ com-github-bumptech-glide = { group = "com.github.bumptech.glide", name = "glide
 # SwipeRefresh
 androidx-swiperefreshlayout = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout", version.ref = "swipeRefresh" }
 androidx-ui-desktop = { group = "androidx.compose.ui", name = "ui-desktop", version.ref = "uiDesktop" }
+firebase-crashlytics-buildtools = { group = "com.google.firebase", name = "firebase-crashlytics-buildtools", version.ref = "firebaseCrashlyticsBuildtools" }
+storage = { module = "com.anggrayudi:storage", version.ref = "storage" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
