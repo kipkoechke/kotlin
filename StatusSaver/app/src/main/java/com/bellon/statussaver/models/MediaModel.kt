@@ -1,4 +1,4 @@
-package com.bellon.statussaver.model
+package com.bellon.statussaver.models
 
 import java.io.Serializable
 
