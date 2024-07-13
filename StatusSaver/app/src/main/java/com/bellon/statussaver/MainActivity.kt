@@ -44,8 +44,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
@@ -137,12 +137,31 @@ class MediaPreferencesManager(context: Context) {
 class SavedMediaManager(private val context: Context) {
     private val sharedPreferences = context.getSharedPreferences("SavedMedia", Context.MODE_PRIVATE)
 
-    fun markAsSaved(uri: Uri) {
-        sharedPreferences.edit().putBoolean(uri.toString(), true).apply()
+    fun markAsSaved(uri: Uri, savedUri: Uri) {
+        sharedPreferences.edit().putString(uri.toString(), savedUri.toString()).apply()
     }
 
     fun isMediaSaved(uri: Uri): Boolean {
-        return sharedPreferences.getBoolean(uri.toString(), false)
+        val savedUriString = sharedPreferences.getString(uri.toString(), null)
+        if (savedUriString != null) {
+            val savedUri = Uri.parse(savedUriString)
+            val exists = doesFileExist(savedUri)
+            if (!exists) {
+                // If the file doesn't exist, remove it from SharedPreferences
+                sharedPreferences.edit().remove(uri.toString()).apply()
+            }
+            return exists
+        }
+        return false
+    }
+
+    private fun doesFileExist(uri: Uri): Boolean {
+        return try {
+            val documentFile = DocumentFile.fromSingleUri(context, uri)
+            documentFile?.exists() == true
+        } catch (e: Exception) {
+            false
+        }
     }
 }
 
@@ -525,6 +544,520 @@ fun StatusScreen(
     }
 }
 
+
+@Composable
+fun SettingsScreen() {
+    Text("Settings Screen")
+}
+
+@Composable
+fun StatusItem(
+    uri: Uri,
+    onClick: () -> Unit,
+    onSave: (Uri) -> Unit,
+    isMediaSaved: (Uri) -> Boolean
+) {
+    var isSaved by remember(uri) { mutableStateOf(isMediaSaved(uri)) }
+    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
+    val isVideo = uri.toString().endsWith(".mp4", true)
+    val context = LocalContext.current
+
+    LaunchedEffect(uri) {
+        if (isVideo) {
+            withContext(Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+                thumbnail = retriever.frameAtTime
+                retriever.release()
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .padding(4.dp)
+            .aspectRatio(1f)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+    ) {
+        Box {
+            if (isVideo && thumbnail != null) {
+                Image(
+                    bitmap = thumbnail!!.asImageBitmap(),
+                    contentDescription = "Video Thumbnail",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(uri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Media",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            if (isVideo) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(8.dp)
+                        .size(36.dp)
+                        .background(Color.Transparent, CircleShape)
+                        .border(2.dp, Color.White, CircleShape)
+                )
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play Video",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .align(Alignment.Center)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .clickable {
+                        if (!isSaved) {
+                            onSave(uri)
+                            isSaved = true
+                        }
+                    }
+                    .size(32.dp)
+                    .padding(bottom = 4.dp, end = 4.dp)
+                    .background(
+                        color = colorResource(id = R.color.colorPrimary),
+                        shape = CircleShape
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (!isSaved) Color.Gray else colorResource(id = R.color.colorPrimary),
+                        shape = CircleShape
+                    )
+            ) {
+                Icon(
+                    imageVector = if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = if (isSaved) "Saved" else "Download icon",
+                    tint = colorResource(id = R.color.white),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .align(Alignment.Center)
+                        .rotate(degrees = if (isSaved) 0f else 90f)
+
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MediaGallery(
+    mediaFiles: List<Uri>,
+    onMediaClick: (Int) -> Unit,
+    onSaveMedia: (Uri) -> Unit,
+    isMediaSaved: (Uri) -> Boolean
+) {
+    if (mediaFiles.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No media files found")
+        }
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            contentPadding = PaddingValues(2.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            itemsIndexed(mediaFiles) { index, uri ->
+                StatusItem(
+                    uri = uri,
+                    onClick = { onMediaClick(index) },
+                    onSave = onSaveMedia,
+                    isMediaSaved = { isMediaSaved(uri) }
+                )
+            }
+        }
+    }
+}
+
+class MediaViewModel(private val appContext: Context) : ViewModel() {
+    private val savedMediaManager = SavedMediaManager(appContext)
+    private val _savedMediaFiles = MutableStateFlow<List<Uri>>(emptyList())
+    val savedMediaFiles: StateFlow<List<Uri>> = _savedMediaFiles.asStateFlow()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            _savedMediaFiles.value = getSavedMediaFromGallery()
+        }
+    }
+
+    fun saveMedia(uri: Uri, isVideo: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!isMediaSaved(uri)) {
+                val savedUri = saveMediaToGallery(uri, isVideo)
+                savedUri?.let {
+                    _savedMediaFiles.value += it
+                    savedMediaManager.markAsSaved(uri, it)
+                }
+            }
+        }
+    }
+
+    fun isMediaSaved(uri: Uri): Boolean {
+        return savedMediaManager.isMediaSaved(uri)
+    }
+
+    private suspend fun getSavedMediaFromGallery(): List<Uri> = withContext(Dispatchers.IO) {
+        val mediaList = mutableListOf<Uri>()
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+        val selectionArgs = arrayOf("%Bellon Saver%")
+
+        val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+
+        listOf(imageUri, videoUri).forEach { uri ->
+            appContext.contentResolver.query(
+                uri, projection, selection, selectionArgs, null
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val contentUri = ContentUris.withAppendedId(uri, id)
+                    mediaList.add(contentUri)
+                }
+            }
+        }
+
+        mediaList
+    }
+
+
+    private suspend fun saveMediaToGallery(uri: Uri, isVideo: Boolean): Uri? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val contentResolver = appContext.contentResolver
+                val inputStream = contentResolver.openInputStream(uri) ?: return@withContext null
+
+                // Get the original filename
+                val originalFileName = getOriginalFileName(uri)
+
+                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (isVideo) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                } else {
+                    if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                }
+
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, originalFileName)
+                    put(
+                        MediaStore.MediaColumns.MIME_TYPE,
+                        if (isVideo) "video/mp4" else "image/jpeg"
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(
+                            MediaStore.MediaColumns.RELATIVE_PATH,
+                            Environment.DIRECTORY_PICTURES + "/Bellon Saver"
+                        )
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    } else {
+                        val directory = File(
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                            "Bellon Saver"
+                        )
+                        if (!directory.exists()) {
+                            directory.mkdirs()
+                        }
+                        put(
+                            MediaStore.MediaColumns.DATA,
+                            File(directory, originalFileName).absolutePath
+                        )
+                    }
+                }
+
+                val outputUri = contentResolver.insert(collection, contentValues)
+                outputUri?.let { savedUri ->
+                    contentResolver.openOutputStream(savedUri)?.use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentValues.clear()
+                        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        contentResolver.update(savedUri, contentValues, null, null)
+                    }
+                }
+                outputUri
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    private fun getOriginalFileName(uri: Uri): String {
+        val cursor = appContext.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (displayNameIndex != -1) {
+                    return it.getString(displayNameIndex)
+                }
+            }
+        }
+        // Fallback to a generic name if unable to get the original filename
+        return "Status_${System.currentTimeMillis()}.${
+            if (uri.toString().endsWith(".mp4", true)) "mp4" else "jpg"
+        }"
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ImagePreview(
+    modifier: Modifier = Modifier,
+    imageUris: List<Uri>,
+    initialPage: Int,
+    onDismiss: () -> Unit,
+    onSave: ((Uri) -> Unit)? = null,
+    isMediaSaved: (Uri) -> Boolean
+) {
+    val context = LocalContext.current
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { imageUris.size })
+    val currentUri = imageUris[pagerState.currentPage]
+    var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
+
+    val items = remember(isSaved) {
+        listOf(
+            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
+            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
+            RepostShareAndSaveItem(
+                if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                if (isSaved) "Saved" else "Save",
+                onClick = {
+                    if (onSave != null && !isSaved) {
+                        onSave(currentUri)
+                        isSaved = true
+                    }
+                }
+            )
+        )
+    }
+
+    Column {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Icon(
+                modifier = Modifier.clickable { onDismiss() },
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back Arrow"
+            )
+            Text(text = "Status Saver 💯")
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+        ) { page ->
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imageUris[page])
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Full-screen image",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            items.forEachIndexed { index, item ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable(
+                            enabled = !(item.title == "Save" && isSaved)
+                        ) { item.onClick() }
+                ) {
+                    Icon(
+                        imageVector = if (item.title == "Save" && isSaved)
+                            Icons.Default.Check else item.icon,
+                        contentDescription = null,
+                        modifier = Modifier.rotate(degrees = if (isSaved) 0f else 90f)
+                    )
+                    Text(text = item.title)
+                }
+            }
+        }
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun VideoPreview(
+    modifier: Modifier = Modifier,
+    videoUris: List<Uri>,
+    initialPage: Int,
+    onDismiss: () -> Unit,
+    onSave: ((Uri) -> Unit)? = null,
+    isMediaSaved: (Uri) -> Boolean
+) {
+    val context = LocalContext.current
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { videoUris.size })
+    val currentUri = videoUris[pagerState.currentPage]
+    var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
+    val items = remember(isSaved) {
+        listOf(
+            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
+            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
+            RepostShareAndSaveItem(
+                if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                if (isSaved) "Saved" else "Save",
+                onClick = {
+                    if (onSave != null && !isSaved) {
+                        onSave(currentUri)
+                        isSaved = true
+                    }
+                }
+            )
+        )
+    }
+
+    // Create a map to cache ExoPlayers
+    val exoPlayerCache = remember { mutableMapOf<Uri, ExoPlayer>() }
+
+    // Function to get or create an ExoPlayer for a given URI
+    val getOrCreateExoPlayer = remember<(Uri) -> ExoPlayer> {
+        { uri ->
+            exoPlayerCache.getOrPut(uri) {
+                ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(uri))
+                    prepare()
+                }
+            }
+        }
+    }
+
+    // Handle page changes
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            val current = videoUris[page]
+            val player = getOrCreateExoPlayer(current)
+            player.playWhenReady = true
+
+            // Pause other players
+            exoPlayerCache.values.forEach {
+                if (it != player) {
+                    it.pause()
+                    it.seekTo(0)
+                }
+            }
+        }
+    }
+
+    // Clean up ExoPlayers when the composable is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayerCache.values.forEach { it.release() }
+            exoPlayerCache.clear()
+        }
+    }
+
+    Column {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Icon(
+                modifier = Modifier.clickable { onDismiss() },
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back Arrow"
+            )
+            Text(text = "Video Preview")
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+        ) { page ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                val uri = videoUris[page]
+                val player = getOrCreateExoPlayer(uri)
+
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = true
+                            controllerAutoShow = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            items.forEachIndexed { index, item ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable(
+                            enabled = !(item.title == "Save" && isSaved)
+                        ) { item.onClick() }
+                ) {
+                    Icon(
+                        imageVector = if (item.title == "Save" && isSaved)
+                            Icons.Default.Check else item.icon, contentDescription = null
+                    )
+                    Text(text = item.title)
+                }
+            }
+        }
+    }
+}
+
+
+data class RepostShareAndSaveItem(
+    val icon: ImageVector,
+    val title: String,
+    val onClick: () -> Unit = {}
+)
+
 @Composable
 fun SavedScreen(
     savedMediaFiles: List<Uri>,
@@ -661,506 +1194,3 @@ fun SavedStatusItem(uri: Uri, onClick: () -> Unit, isVideo: Boolean) {
         }
     }
 }
-
-@Composable
-fun SettingsScreen() {
-    Text("Settings Screen")
-}
-
-@Composable
-fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit, isSaved: Boolean) {
-    var localIsSaved by remember { mutableStateOf(isSaved) }
-    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
-    val isVideo = uri.toString().endsWith(".mp4", true)
-    val context = LocalContext.current
-
-    LaunchedEffect(uri) {
-        if (isVideo) {
-            withContext(Dispatchers.IO) {
-                val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(context, uri)
-                thumbnail = retriever.frameAtTime
-                retriever.release()
-            }
-        }
-    }
-
-    Card(
-        modifier = Modifier
-            .padding(4.dp)
-            .aspectRatio(1f)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(4.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
-    ) {
-        Box {
-            if (isVideo && thumbnail != null) {
-                Image(
-                    bitmap = thumbnail!!.asImageBitmap(),
-                    contentDescription = "Video Thumbnail",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(uri)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "Media",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            if (isVideo) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(8.dp)
-                        .size(36.dp)
-                        .background(Color.Transparent, CircleShape)
-                        .border(2.dp, Color.White, CircleShape)
-                )
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play Video",
-                    tint = Color.White,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .align(Alignment.Center)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .clickable {
-                        if (!localIsSaved) {
-                            onSave(uri)
-                            localIsSaved = true
-                        }
-                    }
-                    .size(32.dp)
-                    .padding(bottom = 4.dp, end = 4.dp)
-                    .background(
-                        color = colorResource(id = R.color.colorPrimary),
-                        shape = CircleShape
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (!isSaved) Color.Gray else colorResource(id = R.color.colorPrimary),
-                        shape = CircleShape
-                    )
-            ) {
-                Icon(
-                    imageVector = if (localIsSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = if (localIsSaved) "Saved" else "Download icon",
-                    tint = colorResource(id = R.color.white),
-                    modifier = Modifier
-                        .size(20.dp)
-                        .align(Alignment.Center)
-                        .rotate(degrees = if (localIsSaved) 0f else 90f)
-
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun MediaGallery(
-    mediaFiles: List<Uri>,
-    onMediaClick: (Int) -> Unit,
-    onSaveMedia: (Uri) -> Unit,
-    isMediaSaved: (Uri) -> Boolean
-) {
-    if (mediaFiles.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("No media files found")
-        }
-    } else {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            contentPadding = PaddingValues(2.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            itemsIndexed(mediaFiles) { index, uri ->
-                StatusItem(
-                    uri = uri,
-                    onClick = { onMediaClick(index) },
-                    onSave = onSaveMedia,
-                    isSaved = isMediaSaved(uri)
-                )
-            }
-        }
-    }
-}
-
-class MediaViewModel(private val appContext: Context) : ViewModel() {
-    private val savedMediaManager = SavedMediaManager(appContext)
-    private val _savedMediaFiles = MutableStateFlow<List<Uri>>(emptyList())
-    val savedMediaFiles: StateFlow<List<Uri>> = _savedMediaFiles.asStateFlow()
-
-    init {
-        viewModelScope.launch(Dispatchers.IO) {
-            _savedMediaFiles.value = getSavedMediaFromGallery()
-        }
-    }
-
-    fun saveMedia(uri: Uri, isVideo: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (!isMediaSaved(uri)) {
-                val savedUri = saveMediaToGallery(uri, isVideo)
-                savedUri?.let {
-                    _savedMediaFiles.value += it
-                    savedMediaManager.markAsSaved(uri)
-                }
-            }
-        }
-    }
-
-    fun isMediaSaved(uri: Uri): Boolean {
-        return savedMediaManager.isMediaSaved(uri)
-    }
-
-    private suspend fun getSavedMediaFromGallery(): List<Uri> = withContext(Dispatchers.IO) {
-        val mediaList = mutableListOf<Uri>()
-        val projection = arrayOf(MediaStore.MediaColumns._ID)
-        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("%Bellon Saver%")
-
-        val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-
-        listOf(imageUri, videoUri).forEach { uri ->
-            appContext.contentResolver.query(
-                uri, projection, selection, selectionArgs, null
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val contentUri = ContentUris.withAppendedId(uri, id)
-                    mediaList.add(contentUri)
-                }
-            }
-        }
-
-        mediaList
-    }
-
-
-    private suspend fun saveMediaToGallery(uri: Uri, isVideo: Boolean): Uri? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val contentResolver = appContext.contentResolver
-                val inputStream = contentResolver.openInputStream(uri) ?: return@withContext null
-
-                // Get the original filename
-                val originalFileName = getOriginalFileName(uri)
-
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    if (isVideo) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                } else {
-                    if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                    else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                }
-
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, originalFileName)
-                    put(
-                        MediaStore.MediaColumns.MIME_TYPE,
-                        if (isVideo) "video/mp4" else "image/jpeg"
-                    )
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(
-                            MediaStore.MediaColumns.RELATIVE_PATH,
-                            Environment.DIRECTORY_PICTURES + "/Bellon Saver"
-                        )
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
-                    } else {
-                        val directory = File(
-                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                            "Bellon Saver"
-                        )
-                        if (!directory.exists()) {
-                            directory.mkdirs()
-                        }
-                        put(
-                            MediaStore.MediaColumns.DATA,
-                            File(directory, originalFileName).absolutePath
-                        )
-                    }
-                }
-
-                val outputUri = contentResolver.insert(collection, contentValues)
-                outputUri?.let { savedUri ->
-                    contentResolver.openOutputStream(savedUri)?.use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        contentValues.clear()
-                        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        contentResolver.update(savedUri, contentValues, null, null)
-                    }
-                }
-                outputUri
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
-        }
-    }
-
-    private fun getOriginalFileName(uri: Uri): String {
-        val cursor = appContext.contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (displayNameIndex != -1) {
-                    return it.getString(displayNameIndex)
-                }
-            }
-        }
-        // Fallback to a generic name if unable to get the original filename
-        return "Status_${System.currentTimeMillis()}.${
-            if (uri.toString().endsWith(".mp4", true)) "mp4" else "jpg"
-        }"
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun ImagePreview(
-    modifier: Modifier = Modifier,
-    imageUris: List<Uri>,
-    initialPage: Int,
-    onDismiss: () -> Unit,
-    onSave: ((Uri) -> Unit)? = null,
-    isMediaSaved: (Uri) -> Boolean
-) {
-    val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { imageUris.size })
-
-    val items = remember {
-        listOf(
-            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
-            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
-            RepostShareAndSaveItem(
-                if (isMediaSaved(imageUris[pagerState.currentPage])) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                if (isMediaSaved(imageUris[pagerState.currentPage])) "Saved" else "Save",
-                onClick = {
-                    if (onSave != null && !isMediaSaved(imageUris[pagerState.currentPage])) {
-                        onSave(imageUris[pagerState.currentPage])
-                    }
-                }
-            )
-        )
-    }
-
-    Column {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Icon(
-                modifier = Modifier.clickable { onDismiss() },
-                imageVector = Icons.Filled.ArrowBack,
-                contentDescription = "Back Arrow"
-            )
-            Text(text = "Status Saver 💯")
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
-        ) { page ->
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageUris[page])
-                    .crossfade(true)
-                    .build(),
-                contentDescription = "Full-screen image",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = modifier.fillMaxWidth()
-        ) {
-            items.forEachIndexed { index, item ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable(
-                            enabled = !(item.title == "Save" && isMediaSaved(imageUris[pagerState.currentPage]))
-                        ) { item.onClick() }
-                ) {
-                    Icon(
-                        imageVector = if (item.title == "Save" && isMediaSaved(imageUris[pagerState.currentPage]))
-                            Icons.Default.Check else item.icon,
-                        contentDescription = null,
-                        modifier = Modifier.rotate(degrees = if (isMediaSaved(imageUris[pagerState.currentPage])) 0f else 90f)
-                    )
-                    Text(text = item.title)
-                }
-            }
-        }
-    }
-}
-
-@androidx.annotation.OptIn(UnstableApi::class)
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun VideoPreview(
-    modifier: Modifier = Modifier,
-    videoUris: List<Uri>,
-    initialPage: Int,
-    onDismiss: () -> Unit,
-    onSave: ((Uri) -> Unit)? = null,
-    isMediaSaved: (Uri) -> Boolean
-) {
-    val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { videoUris.size })
-
-    val items = remember {
-        listOf(
-            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
-            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
-            RepostShareAndSaveItem(
-                if (isMediaSaved(videoUris[pagerState.currentPage])) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                if (isMediaSaved(videoUris[pagerState.currentPage])) "Saved" else "Save",
-                onClick = {
-                    if (onSave != null && !isMediaSaved(videoUris[pagerState.currentPage])) {
-                        onSave(videoUris[pagerState.currentPage])
-                    }
-                }
-            )
-        )
-    }
-
-    // Create a map to cache ExoPlayers
-    val exoPlayerCache = remember { mutableMapOf<Uri, ExoPlayer>() }
-
-    // Function to get or create an ExoPlayer for a given URI
-    val getOrCreateExoPlayer = remember<(Uri) -> ExoPlayer> {
-        { uri ->
-            exoPlayerCache.getOrPut(uri) {
-                ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(MediaItem.fromUri(uri))
-                    prepare()
-                }
-            }
-        }
-    }
-
-    // Handle page changes
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            val currentUri = videoUris[page]
-            val player = getOrCreateExoPlayer(currentUri)
-            player.playWhenReady = true
-
-            // Pause other players
-            exoPlayerCache.values.forEach {
-                if (it != player) {
-                    it.pause()
-                    it.seekTo(0)
-                }
-            }
-        }
-    }
-
-    // Clean up ExoPlayers when the composable is disposed
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayerCache.values.forEach { it.release() }
-            exoPlayerCache.clear()
-        }
-    }
-
-    Column {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Icon(
-                modifier = Modifier.clickable { onDismiss() },
-                imageVector = Icons.Filled.ArrowBack,
-                contentDescription = "Back Arrow"
-            )
-            Text(text = "Video Preview")
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
-        ) { page ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                val uri = videoUris[page]
-                val player = getOrCreateExoPlayer(uri)
-
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            this.player = player
-                            useController = true
-                            controllerAutoShow = true
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = modifier.fillMaxWidth()
-        ) {
-            items.forEachIndexed { index, item ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable(
-                            enabled = !(item.title == "Save" && isMediaSaved(videoUris[pagerState.currentPage]))
-                        ) { item.onClick() }
-                ) {
-                    Icon(
-                        imageVector = if (item.title == "Save" && isMediaSaved(videoUris[pagerState.currentPage]))
-                            Icons.Default.Check else item.icon, contentDescription = null
-                    )
-                    Text(text = item.title)
-                }
-            }
-        }
-    }
-}
-
-
-data class RepostShareAndSaveItem(
-    val icon: ImageVector,
-    val title: String,
-    val onClick: () -> Unit = {}
-)
