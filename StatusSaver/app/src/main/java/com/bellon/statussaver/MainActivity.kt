@@ -2,6 +2,7 @@
 
 package com.bellon.statussaver
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -42,9 +44,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -92,6 +94,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -131,11 +134,30 @@ class MediaPreferencesManager(context: Context) {
     }
 }
 
+class SavedMediaManager(private val context: Context) {
+    private val sharedPreferences = context.getSharedPreferences("SavedMedia", Context.MODE_PRIVATE)
+
+    fun markAsSaved(uri: Uri) {
+        sharedPreferences.edit().putBoolean(uri.toString(), true).apply()
+    }
+
+    fun isMediaSaved(uri: Uri): Boolean {
+        return sharedPreferences.getBoolean(uri.toString(), false)
+    }
+}
+
 class MainActivity : ComponentActivity(), LifecycleObserver {
     private var whatsAppStatusUri by mutableStateOf<Uri?>(null)
     private val _mediaFiles = MutableStateFlow<List<Uri>>(emptyList())
     val mediaFiles: StateFlow<List<Uri>> = _mediaFiles.asStateFlow()
-    private val viewModel: MediaViewModel by viewModels()
+    private val viewModel: MediaViewModel by viewModels {
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return MediaViewModel(applicationContext) as T
+            }
+        }
+    }
+
     private lateinit var mediaPreferencesManager: MediaPreferencesManager
 
     private val requestDirectoryAccess =
@@ -196,13 +218,10 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                 onRequestAccess = { requestWhatsAppStatusAccess() },
                 mediaFiles = mediaFiles,
                 savedMediaFiles = viewModel.savedMediaFiles,
-                onSaveMedia = { context, uri, isVideo ->
-                    viewModel.saveMedia(
-                        context,
-                        uri,
-                        isVideo
-                    )
+                onSaveMedia = { uri, isVideo ->
+                    viewModel.saveMedia(uri, isVideo)
                 },
+                isMediaSaved = { uri -> viewModel.isMediaSaved(uri) },
                 navController = navController
             )
         }
@@ -251,7 +270,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                         true
                     ) == true
                 }
-                ?.sortedByDescending { it.lastModified() }  // Sort by last modified time
+                ?.sortedByDescending { it.lastModified() }
                 ?.mapNotNull { it.uri }
                 ?: emptyList()
         } catch (e: Exception) {
@@ -259,6 +278,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
             emptyList()
         }
     }
+
 }
 
 @Composable
@@ -267,7 +287,8 @@ fun WhatsAppStatusApp(
     onRequestAccess: () -> Unit,
     mediaFiles: StateFlow<List<Uri>>,
     savedMediaFiles: StateFlow<List<Uri>>,
-    onSaveMedia: (Context, Uri, Boolean) -> Unit,
+    onSaveMedia: (Uri, Boolean) -> Unit,
+    isMediaSaved: (Uri) -> Boolean,
     navController: NavHostController
 ) {
     val currentMediaFiles by mediaFiles.collectAsState()
@@ -329,19 +350,6 @@ fun WhatsAppStatusApp(
                             }
                         )
                     }
-//                    listOf(Screen.Status, Screen.Saved, Screen.Settings).forEach { screen ->
-//                        NavigationBarItem(
-//                            icon = { Icon(screen.selectedIcon, contentDescription = null) },
-//                            label = { Text(screen.title) },
-//                            selected = currentRoute == screen.route,
-//                            onClick = {
-//                                navController.navigate(screen.route) {
-//                                    popUpTo(navController.graph.startDestinationId)
-//                                    launchSingleTop = true
-//                                }
-//                            }
-//                        )
-//                    }
                 }
             }
         }
@@ -362,7 +370,8 @@ fun WhatsAppStatusApp(
                     StatusScreen(
                         mediaFiles = currentMediaFiles,
                         navController = navController,
-                        onSaveMedia = onSaveMedia
+                        onSaveMedia = onSaveMedia,
+                        isMediaSaved = isMediaSaved
                     )
                 }
             }
@@ -396,8 +405,9 @@ fun WhatsAppStatusApp(
                         imageUris = imageFiles,
                         initialPage = imageIndex,
                         onDismiss = { navController.navigateUp() },
+                        isMediaSaved = isMediaSaved,
                         onSave = if (isStatus) {
-                            { uri -> onSaveMedia(context, uri, false) }
+                            { uri -> onSaveMedia(uri, false) }
                         } else null
                     )
                 }
@@ -422,8 +432,9 @@ fun WhatsAppStatusApp(
                         videoUris = videoFiles,
                         initialPage = videoIndex,
                         onDismiss = { navController.navigateUp() },
+                        isMediaSaved = isMediaSaved,
                         onSave = if (isStatus) {
-                            { uri -> onSaveMedia(context, uri, true) }
+                            { uri -> onSaveMedia(uri, true) }
                         } else null
                     )
                 }
@@ -454,7 +465,8 @@ fun RequestAccessScreen(onRequestAccess: () -> Unit) {
 fun StatusScreen(
     mediaFiles: List<Uri>,
     navController: NavHostController,
-    onSaveMedia: (Context, Uri, Boolean) -> Unit
+    onSaveMedia: (Uri, Boolean) -> Unit,
+    isMediaSaved: (Uri) -> Boolean
 ) {
     val tabs = listOf("Images", "Videos")
     val context = LocalContext.current
@@ -496,7 +508,8 @@ fun StatusScreen(
                     onMediaClick = { index ->
                         navController.navigate(DetailsScreen.ImagePreview.createRoute(index, true))
                     },
-                    onSaveMedia = { uri -> onSaveMedia(context, uri, false) }
+                    onSaveMedia = { uri -> onSaveMedia(uri, false) },
+                    isMediaSaved = isMediaSaved
                 )
 
                 1 -> MediaGallery(
@@ -504,7 +517,8 @@ fun StatusScreen(
                     onMediaClick = { index ->
                         navController.navigate(DetailsScreen.VideoPreview.createRoute(index, true))
                     },
-                    onSaveMedia = { uri -> onSaveMedia(context, uri, true) }
+                    onSaveMedia = { uri -> onSaveMedia(uri, true) },
+                    isMediaSaved = isMediaSaved
                 )
             }
         }
@@ -515,7 +529,7 @@ fun StatusScreen(
 fun SavedScreen(
     savedMediaFiles: List<Uri>,
     navController: NavHostController,
-    onSaveMedia: (Context, Uri, Boolean) -> Unit
+    onSaveMedia: (Uri, Boolean) -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Images", "Videos")
@@ -532,26 +546,118 @@ fun SavedScreen(
             }
         }
         when (selectedTab) {
-            0 -> MediaGallery(
+            0 -> SavedMediaGallery(
                 mediaFiles = savedMediaFiles.filter { it.toString().endsWith(".jpg", true) },
-                onMediaClick = { index ->
-                    navController.navigate(DetailsScreen.ImagePreview.createRoute(index, false))
+                onMediaClick = { uri ->
+                    // Navigate to image preview
                 },
-                onSaveMedia = { /* Do nothing, as it's already saved */ }
+                isImage = true
             )
 
-            1 -> MediaGallery(
+            1 -> SavedMediaGallery(
                 mediaFiles = savedMediaFiles.filter { it.toString().endsWith(".mp4", true) },
-                onMediaClick = { index ->
-                    val videoFiles = savedMediaFiles.filter { it.toString().endsWith(".mp4", true) }
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(videoFiles[index], "video/mp4")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(intent)
+                onMediaClick = { uri ->
+                    // Play video
                 },
-                onSaveMedia = { /* Do nothing, as it's already saved */ }
+                isImage = false
             )
+        }
+    }
+}
+
+@Composable
+fun SavedMediaGallery(
+    mediaFiles: List<Uri>,
+    onMediaClick: (Uri) -> Unit,
+    isImage: Boolean
+) {
+    if (mediaFiles.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No saved ${if (isImage) "images" else "videos"} found")
+        }
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            contentPadding = PaddingValues(2.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            itemsIndexed(mediaFiles) { index, uri ->
+                SavedStatusItem(
+                    uri = uri,
+                    onClick = { onMediaClick(uri) },
+                    isVideo = !isImage
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SavedStatusItem(uri: Uri, onClick: () -> Unit, isVideo: Boolean) {
+    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
+    val context = LocalContext.current
+
+    LaunchedEffect(uri) {
+        if (isVideo) {
+            withContext(Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+                thumbnail = retriever.frameAtTime
+                retriever.release()
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier
+            .padding(4.dp)
+            .aspectRatio(1f)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+    ) {
+        Box {
+            if (isVideo && thumbnail != null) {
+                Image(
+                    bitmap = thumbnail!!.asImageBitmap(),
+                    contentDescription = "Video Thumbnail",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(uri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Media",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            if (isVideo) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(8.dp)
+                        .size(36.dp)
+                        .background(Color.Transparent, CircleShape)
+                        .border(2.dp, Color.White, CircleShape)
+                )
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play Video",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .align(Alignment.Center)
+                )
+            }
         }
     }
 }
@@ -562,7 +668,8 @@ fun SettingsScreen() {
 }
 
 @Composable
-fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit) {
+fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit, isSaved: Boolean) {
+    var localIsSaved by remember { mutableStateOf(isSaved) }
     var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
     val isVideo = uri.toString().endsWith(".mp4", true)
     val context = LocalContext.current
@@ -628,7 +735,12 @@ fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .clickable { onSave(uri) }
+                    .clickable {
+                        if (!localIsSaved) {
+                            onSave(uri)
+                            localIsSaved = true
+                        }
+                    }
                     .size(32.dp)
                     .padding(bottom = 4.dp, end = 4.dp)
                     .background(
@@ -637,18 +749,18 @@ fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit) {
                     )
                     .border(
                         width = 1.dp,
-                        color = colorResource(id = R.color.colorPrimary),
+                        color = if (!isSaved) Color.Gray else colorResource(id = R.color.colorPrimary),
                         shape = CircleShape
                     )
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowForward,
-                    contentDescription = "Download icon",
+                    imageVector = if (localIsSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = if (localIsSaved) "Saved" else "Download icon",
                     tint = colorResource(id = R.color.white),
                     modifier = Modifier
                         .size(20.dp)
                         .align(Alignment.Center)
-                        .rotate(degrees = 90f)
+                        .rotate(degrees = if (localIsSaved) 0f else 90f)
 
                 )
             }
@@ -660,7 +772,8 @@ fun StatusItem(uri: Uri, onClick: () -> Unit, onSave: (Uri) -> Unit) {
 fun MediaGallery(
     mediaFiles: List<Uri>,
     onMediaClick: (Int) -> Unit,
-    onSaveMedia: (Uri) -> Unit
+    onSaveMedia: (Uri) -> Unit,
+    isMediaSaved: (Uri) -> Boolean
 ) {
     if (mediaFiles.isEmpty()) {
         Box(
@@ -679,37 +792,75 @@ fun MediaGallery(
                 StatusItem(
                     uri = uri,
                     onClick = { onMediaClick(index) },
-                    onSave = onSaveMedia
+                    onSave = onSaveMedia,
+                    isSaved = isMediaSaved(uri)
                 )
             }
         }
     }
 }
 
-class MediaViewModel : ViewModel() {
+class MediaViewModel(private val appContext: Context) : ViewModel() {
+    private val savedMediaManager = SavedMediaManager(appContext)
     private val _savedMediaFiles = MutableStateFlow<List<Uri>>(emptyList())
     val savedMediaFiles: StateFlow<List<Uri>> = _savedMediaFiles.asStateFlow()
 
-    fun saveMedia(context: Context, uri: Uri, isVideo: Boolean) {
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            _savedMediaFiles.value = getSavedMediaFromGallery()
+        }
+    }
+
+    fun saveMedia(uri: Uri, isVideo: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             if (!isMediaSaved(uri)) {
-                val savedUri = saveMediaToGallery(context, uri, isVideo)
+                val savedUri = saveMediaToGallery(uri, isVideo)
                 savedUri?.let {
                     _savedMediaFiles.value += it
+                    savedMediaManager.markAsSaved(uri)
                 }
             }
         }
     }
 
-    private fun isMediaSaved(uri: Uri): Boolean {
-        return _savedMediaFiles.value.contains(uri)
+    fun isMediaSaved(uri: Uri): Boolean {
+        return savedMediaManager.isMediaSaved(uri)
     }
 
-    private suspend fun saveMediaToGallery(context: Context, uri: Uri, isVideo: Boolean): Uri? {
+    private suspend fun getSavedMediaFromGallery(): List<Uri> = withContext(Dispatchers.IO) {
+        val mediaList = mutableListOf<Uri>()
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+        val selectionArgs = arrayOf("%Bellon Saver%")
+
+        val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+
+        listOf(imageUri, videoUri).forEach { uri ->
+            appContext.contentResolver.query(
+                uri, projection, selection, selectionArgs, null
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val contentUri = ContentUris.withAppendedId(uri, id)
+                    mediaList.add(contentUri)
+                }
+            }
+        }
+
+        mediaList
+    }
+
+
+    private suspend fun saveMediaToGallery(uri: Uri, isVideo: Boolean): Uri? {
         return withContext(Dispatchers.IO) {
             try {
-                val contentResolver = context.contentResolver
+                val contentResolver = appContext.contentResolver
                 val inputStream = contentResolver.openInputStream(uri) ?: return@withContext null
+
+                // Get the original filename
+                val originalFileName = getOriginalFileName(uri)
 
                 val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     if (isVideo) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -720,10 +871,7 @@ class MediaViewModel : ViewModel() {
                 }
 
                 val contentValues = ContentValues().apply {
-                    put(
-                        MediaStore.MediaColumns.DISPLAY_NAME,
-                        "Bellon_Saver_${System.currentTimeMillis()}"
-                    )
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, originalFileName)
                     put(
                         MediaStore.MediaColumns.MIME_TYPE,
                         if (isVideo) "video/mp4" else "image/jpeg"
@@ -744,10 +892,7 @@ class MediaViewModel : ViewModel() {
                         }
                         put(
                             MediaStore.MediaColumns.DATA,
-                            File(
-                                directory,
-                                "Bellon_Saver_${System.currentTimeMillis()}"
-                            ).absolutePath
+                            File(directory, originalFileName).absolutePath
                         )
                     }
                 }
@@ -770,6 +915,22 @@ class MediaViewModel : ViewModel() {
             }
         }
     }
+
+    private fun getOriginalFileName(uri: Uri): String {
+        val cursor = appContext.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val displayNameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (displayNameIndex != -1) {
+                    return it.getString(displayNameIndex)
+                }
+            }
+        }
+        // Fallback to a generic name if unable to get the original filename
+        return "Status_${System.currentTimeMillis()}.${
+            if (uri.toString().endsWith(".mp4", true)) "mp4" else "jpg"
+        }"
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -779,7 +940,8 @@ fun ImagePreview(
     imageUris: List<Uri>,
     initialPage: Int,
     onDismiss: () -> Unit,
-    onSave: ((Uri) -> Unit)? = null
+    onSave: ((Uri) -> Unit)? = null,
+    isMediaSaved: (Uri) -> Boolean
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { imageUris.size })
@@ -789,10 +951,10 @@ fun ImagePreview(
             RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
             RepostShareAndSaveItem(Icons.Default.Share, "Share"),
             RepostShareAndSaveItem(
-                Icons.Default.Done,
-                "Save",
+                if (isMediaSaved(imageUris[pagerState.currentPage])) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                if (isMediaSaved(imageUris[pagerState.currentPage])) "Saved" else "Save",
                 onClick = {
-                    if (onSave != null) {
+                    if (onSave != null && !isMediaSaved(imageUris[pagerState.currentPage])) {
                         onSave(imageUris[pagerState.currentPage])
                     }
                 }
@@ -844,9 +1006,16 @@ fun ImagePreview(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable { item.onClick() }
+                        .clickable(
+                            enabled = !(item.title == "Save" && isMediaSaved(imageUris[pagerState.currentPage]))
+                        ) { item.onClick() }
                 ) {
-                    Icon(imageVector = item.icon, contentDescription = null)
+                    Icon(
+                        imageVector = if (item.title == "Save" && isMediaSaved(imageUris[pagerState.currentPage]))
+                            Icons.Default.Check else item.icon,
+                        contentDescription = null,
+                        modifier = Modifier.rotate(degrees = if (isMediaSaved(imageUris[pagerState.currentPage])) 0f else 90f)
+                    )
                     Text(text = item.title)
                 }
             }
@@ -862,7 +1031,8 @@ fun VideoPreview(
     videoUris: List<Uri>,
     initialPage: Int,
     onDismiss: () -> Unit,
-    onSave: ((Uri) -> Unit)? = null
+    onSave: ((Uri) -> Unit)? = null,
+    isMediaSaved: (Uri) -> Boolean
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { videoUris.size })
@@ -872,10 +1042,10 @@ fun VideoPreview(
             RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
             RepostShareAndSaveItem(Icons.Default.Share, "Share"),
             RepostShareAndSaveItem(
-                Icons.Default.Done,
-                "Save",
+                if (isMediaSaved(videoUris[pagerState.currentPage])) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                if (isMediaSaved(videoUris[pagerState.currentPage])) "Saved" else "Save",
                 onClick = {
-                    if (onSave != null) {
+                    if (onSave != null && !isMediaSaved(videoUris[pagerState.currentPage])) {
                         onSave(videoUris[pagerState.currentPage])
                     }
                 }
@@ -973,9 +1143,14 @@ fun VideoPreview(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable { item.onClick() }
+                        .clickable(
+                            enabled = !(item.title == "Save" && isMediaSaved(videoUris[pagerState.currentPage]))
+                        ) { item.onClick() }
                 ) {
-                    Icon(imageVector = item.icon, contentDescription = null)
+                    Icon(
+                        imageVector = if (item.title == "Save" && isMediaSaved(videoUris[pagerState.currentPage]))
+                            Icons.Default.Check else item.icon, contentDescription = null
+                    )
                     Text(text = item.title)
                 }
             }
