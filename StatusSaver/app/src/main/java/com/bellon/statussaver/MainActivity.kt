@@ -7,6 +7,9 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -98,7 +101,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -271,6 +274,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
 
     override fun onResume() {
         super.onResume()
+        viewModel.refreshMediaFiles()
         if (whatsAppStatusUri != null) {
             refreshStatusesInBackground()
         }
@@ -295,10 +299,9 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
             val documentFile = DocumentFile.fromTreeUri(this@MainActivity, uri)
             val files = documentFile?.listFiles()
                 ?.filter {
-                    it.name?.endsWith(".jpg", true) == true || it.name?.endsWith(
-                        ".mp4",
-                        true
-                    ) == true
+                    it.name?.endsWith(".jpg", true) == true ||
+                            it.name?.endsWith(".mp4", true) == true ||
+                            it.name?.endsWith(".nomedia", true) == true // Include .nomedia files
                 }
                 ?.sortedByDescending { it.lastModified() }
                 ?.mapNotNull { it.uri }
@@ -598,16 +601,23 @@ fun StatusItem(
 ) {
     var isSaved by remember(uri) { mutableStateOf(isMediaSaved(uri)) }
     var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
-    val isVideo = uri.toString().endsWith(".mp4", true)
+    var isVideo by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     LaunchedEffect(uri) {
-        if (isVideo) {
-            withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
+            val mimeType = context.contentResolver.getType(uri)
+            isVideo = mimeType?.startsWith("video/") == true
+            if (isVideo) {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(context, uri)
-                thumbnail = retriever.frameAtTime
-                retriever.release()
+                try {
+                    retriever.setDataSource(context, uri)
+                    thumbnail = retriever.frameAtTime
+                } catch (e: Exception) {
+                    Log.e("StatusItem", "Error getting video thumbnail", e)
+                } finally {
+                    retriever.release()
+                }
             }
         }
     }
@@ -733,6 +743,12 @@ class MediaViewModel(private val appContext: Context) : ViewModel() {
     val savedMediaFiles: StateFlow<List<Uri>> = _savedMediaFiles.asStateFlow()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            refreshSavedMedia()
+        }
+    }
+
+    fun refreshMediaFiles() {
         viewModelScope.launch(Dispatchers.IO) {
             refreshSavedMedia()
         }
@@ -901,6 +917,11 @@ fun ImagePreview(
     onDelete: ((Uri) -> Unit)? = null,
     isMediaSaved: (Uri) -> Boolean
 ) {
+    if (imageUris.isEmpty()) {
+        onDismiss()
+        return
+    }
+
     val context = LocalContext.current
     var currentUris by remember { mutableStateOf(imageUris) }
     var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, currentUris.size - 1)) }
@@ -916,11 +937,12 @@ fun ImagePreview(
         }
     }
 
-    if (currentUris.isEmpty()) {
+    val currentUri = currentUris.getOrNull(currentPage)
+    if (currentUri == null) {
+        onDismiss()
         return
     }
 
-    val currentUri = currentUris[currentPage]
     var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
 
     val items = remember(isSaved, currentUri) {
@@ -954,7 +976,6 @@ fun ImagePreview(
                 )
         )
     }
-
 
     Column {
         Row(
@@ -1014,7 +1035,11 @@ fun ImagePreview(
                         imageVector = if (item.title == "Save" && isSaved)
                             Icons.Default.Check else item.icon,
                         contentDescription = null,
-                        modifier = Modifier.rotate(degrees = if (isSaved) 0f else 90f)
+                        modifier = if (item.title == "Save" && !isSaved) {
+                            Modifier.rotate(90f)
+                        } else {
+                            Modifier
+                        }
                     )
                     Text(text = item.title)
                 }
@@ -1035,9 +1060,15 @@ fun VideoPreview(
     onDelete: ((Uri) -> Unit)? = null,
     isMediaSaved: (Uri) -> Boolean
 ) {
+    if (videoUris.isEmpty()) {
+        onDismiss()
+        return
+    }
+
     val context = LocalContext.current
     var currentUris by remember { mutableStateOf(videoUris) }
     var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, currentUris.size - 1)) }
+
     val pagerState = rememberPagerState(initialPage = currentPage) { currentUris.size }
 
     LaunchedEffect(currentUris) {
@@ -1049,11 +1080,12 @@ fun VideoPreview(
         }
     }
 
-    if (currentUris.isEmpty()) {
+    val currentUri = currentUris.getOrNull(currentPage)
+    if (currentUri == null) {
+        onDismiss()
         return
     }
 
-    val currentUri = currentUris[currentPage]
     var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
 
     val items = remember(isSaved, currentUri) {
@@ -1088,17 +1120,84 @@ fun VideoPreview(
         )
     }
 
-
     // Create a map to cache ExoPlayers
     val exoPlayerCache = remember { mutableMapOf<Uri, ExoPlayer>() }
+
+    // Audio focus management
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val audioFocusRequest = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener { focusChange ->
+                    when (focusChange) {
+                        AudioManager.AUDIOFOCUS_GAIN -> {
+                            exoPlayerCache.values.forEach { it.play() }
+                        }
+
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                        AudioManager.AUDIOFOCUS_LOSS -> {
+                            exoPlayerCache.values.forEach { it.pause() }
+                        }
+                    }
+                }
+                .build()
+        } else {
+            null
+        }
+    }
+
+    // Function to request audio focus
+    val requestAudioFocus = remember {
+        {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioManager.requestAudioFocus(audioFocusRequest!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                ) ==
+                        AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        }
+    }
+
+    // Function to abandon audio focus
+    val abandonAudioFocus = remember {
+        {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest!!)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
+        }
+    }
+
 
     // Function to get or create an ExoPlayer for a given URI
     val getOrCreateExoPlayer = remember<(Uri) -> ExoPlayer> {
         { uri ->
             exoPlayerCache.getOrPut(uri) {
                 ExoPlayer.Builder(context).build().apply {
-                    setMediaItem(MediaItem.fromUri(uri))
+                    setMediaItem(androidx.media3.common.MediaItem.fromUri(uri))
                     prepare()
+                    addListener(object : Player.Listener {
+                        override fun onPlaybackStateChanged(state: Int) {
+                            when (state) {
+                                Player.STATE_ENDED -> {
+                                    abandonAudioFocus()
+                                }
+                            }
+                        }
+                    })
                 }
             }
         }
@@ -1109,25 +1208,28 @@ fun VideoPreview(
         snapshotFlow { pagerState.currentPage }.collect { page ->
             val current = videoUris[page]
             val player = getOrCreateExoPlayer(current)
-            player.playWhenReady = true
+            if (requestAudioFocus()) {
+                player.playWhenReady = true
+            }
 
             // Pause other players
             exoPlayerCache.values.forEach {
                 if (it != player) {
                     it.pause()
-                    it.seekTo(0)
                 }
             }
         }
     }
 
-    // Clean up ExoPlayers when the composable is disposed
+    // Clean up ExoPlayers and audio focus when the composable is disposed
     DisposableEffect(Unit) {
         onDispose {
             exoPlayerCache.values.forEach { it.release() }
             exoPlayerCache.clear()
+            abandonAudioFocus()
         }
     }
+
 
     Column {
         Row(
@@ -1191,7 +1293,12 @@ fun VideoPreview(
                 ) {
                     Icon(
                         imageVector = if (item.title == "Save" && isSaved)
-                            Icons.Default.Check else item.icon, contentDescription = null
+                            Icons.Default.Check else item.icon, contentDescription = null,
+                        modifier = if (item.title == "Save" && !isSaved) {
+                            Modifier.rotate(90f)
+                        } else {
+                            Modifier
+                        }
                     )
                     Text(text = item.title)
                 }
