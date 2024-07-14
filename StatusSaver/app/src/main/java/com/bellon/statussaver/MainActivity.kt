@@ -206,6 +206,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     private fun refreshStatusesInBackground() {
         lifecycleScope.launch(Dispatchers.IO) {
             val updatedFiles = getWhatsAppStatusFiles()
+            Log.d("MainActivity", "Refreshed ${updatedFiles.size} WhatsApp status files")
             _mediaFiles.value = updatedFiles
             mediaPreferencesManager.saveMediaUris(updatedFiles)
         }
@@ -229,15 +230,23 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
             refreshStatusesInBackground()
         }
 
+        lifecycleScope.launch {
+            viewModel.savedMediaFiles.collect { savedFiles ->
+                Log.d("MainActivity", "Collected ${savedFiles.size} saved media files")
+                Log.d("MainActivity", "Saved media URIs: ${savedFiles.joinToString()}")
+            }
+        }
 
         setContent {
             val navController = rememberNavController()
+
             WhatsAppStatusApp(
                 whatsAppStatusUri = whatsAppStatusUri,
                 onRequestAccess = { requestWhatsAppStatusAccess() },
                 mediaFiles = mediaFiles,
                 savedMediaFiles = viewModel.savedMediaFiles,
                 onSaveMedia = { uri, isVideo ->
+                    Log.d("MainActivity", "Saving media: $uri, isVideo: $isVideo")
                     viewModel.saveMedia(uri, isVideo)
                 },
                 isMediaSaved = { uri -> viewModel.isMediaSaved(uri) },
@@ -282,7 +291,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         try {
             val uri = whatsAppStatusUri ?: return@withContext emptyList()
             val documentFile = DocumentFile.fromTreeUri(this@MainActivity, uri)
-            documentFile?.listFiles()
+            val files = documentFile?.listFiles()
                 ?.filter {
                     it.name?.endsWith(".jpg", true) == true || it.name?.endsWith(
                         ".mp4",
@@ -292,6 +301,8 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                 ?.sortedByDescending { it.lastModified() }
                 ?.mapNotNull { it.uri }
                 ?: emptyList()
+            Log.d("MainActivity", "Found ${files.size} WhatsApp status files")
+            files
         } catch (e: Exception) {
             Log.e("MainActivity", "Error getting WhatsApp status files", e)
             emptyList()
@@ -312,7 +323,7 @@ fun WhatsAppStatusApp(
 ) {
     val currentMediaFiles by mediaFiles.collectAsState()
     val currentSavedMediaFiles by savedMediaFiles.collectAsState()
-
+    val context = LocalContext.current
     Scaffold(
         bottomBar = {
             if (whatsAppStatusUri != null) {
@@ -416,10 +427,12 @@ fun WhatsAppStatusApp(
                 val imageFiles = if (isStatus) {
                     currentMediaFiles.filter { it.toString().endsWith(".jpg", true) }
                 } else {
-                    currentSavedMediaFiles.filter { it.toString().endsWith(".jpg", true) }
+                    currentSavedMediaFiles.filter {
+                        val mimeType = context.contentResolver.getType(it)
+                        mimeType?.startsWith("image/") == true
+                    }
                 }
                 if (imageFiles.isNotEmpty()) {
-                    val context = LocalContext.current
                     ImagePreview(
                         imageUris = imageFiles,
                         initialPage = imageIndex,
@@ -431,6 +444,7 @@ fun WhatsAppStatusApp(
                     )
                 }
             }
+
             composable(
                 route = DetailsScreen.VideoPreview.route,
                 arguments = listOf(
@@ -443,10 +457,12 @@ fun WhatsAppStatusApp(
                 val videoFiles = if (isStatus) {
                     currentMediaFiles.filter { it.toString().endsWith(".mp4", true) }
                 } else {
-                    currentSavedMediaFiles.filter { it.toString().endsWith(".mp4", true) }
+                    currentSavedMediaFiles.filter {
+                        val mimeType = context.contentResolver.getType(it)
+                        mimeType?.startsWith("video/") == true
+                    }
                 }
                 if (videoFiles.isNotEmpty()) {
-                    val context = LocalContext.current
                     VideoPreview(
                         videoUris = videoFiles,
                         initialPage = videoIndex,
@@ -695,8 +711,13 @@ class MediaViewModel(private val appContext: Context) : ViewModel() {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            _savedMediaFiles.value = getSavedMediaFromGallery()
+            refreshSavedMedia()
         }
+    }
+
+    private suspend fun refreshSavedMedia() {
+        _savedMediaFiles.value = getSavedMediaFromGallery()
+        Log.d("MediaViewModel", "Refreshed saved media. Total: ${_savedMediaFiles.value.size}")
     }
 
     fun saveMedia(uri: Uri, isVideo: Boolean) {
@@ -704,8 +725,9 @@ class MediaViewModel(private val appContext: Context) : ViewModel() {
             if (!isMediaSaved(uri)) {
                 val savedUri = saveMediaToGallery(uri, isVideo)
                 savedUri?.let {
-                    _savedMediaFiles.value += it
+                    Log.d("MediaViewModel", "Saved new media: $it")
                     savedMediaManager.markAsSaved(uri, it)
+                    refreshSavedMedia()
                 }
             }
         }
@@ -717,29 +739,39 @@ class MediaViewModel(private val appContext: Context) : ViewModel() {
 
     private suspend fun getSavedMediaFromGallery(): List<Uri> = withContext(Dispatchers.IO) {
         val mediaList = mutableListOf<Uri>()
-        val projection = arrayOf(MediaStore.MediaColumns._ID)
-        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("%Bellon Saver%")
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.RELATIVE_PATH,
+            MediaStore.MediaColumns.MIME_TYPE
+        )
+        val selection =
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND (${MediaStore.MediaColumns.MIME_TYPE} LIKE ? OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?)"
+        val selectionArgs = arrayOf("%Bellon Saver%", "image/%", "video/%")
 
-        val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val uri = MediaStore.Files.getContentUri("external")
 
-        listOf(imageUri, videoUri).forEach { uri ->
-            appContext.contentResolver.query(
-                uri, projection, selection, selectionArgs, null
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val contentUri = ContentUris.withAppendedId(uri, id)
-                    mediaList.add(contentUri)
-                }
+        appContext.contentResolver.query(
+            uri, projection, selection, selectionArgs, null
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
+            val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idColumn)
+                val path = cursor.getString(pathColumn)
+                val mimeType = cursor.getString(mimeTypeColumn)
+                val contentUri = ContentUris.withAppendedId(uri, id)
+                mediaList.add(contentUri)
+                Log.d(
+                    "MediaViewModel",
+                    "Found media: $contentUri, path: $path, mimeType: $mimeType"
+                )
             }
         }
 
+        Log.d("MediaViewModel", "Total saved media found: ${mediaList.size}")
         mediaList
     }
-
 
     private suspend fun saveMediaToGallery(uri: Uri, isVideo: Boolean): Uri? {
         return withContext(Dispatchers.IO) {
@@ -1064,11 +1096,34 @@ fun SavedScreen(
     navController: NavHostController,
     onSaveMedia: (Uri, Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    Log.d("SavedScreen", "Received ${savedMediaFiles.size} saved media files")
+
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Images", "Videos")
-    val context = LocalContext.current
+
+    val imageFiles = remember(savedMediaFiles) {
+        savedMediaFiles.filter { uri ->
+            val mimeType = context.contentResolver.getType(uri)
+            mimeType?.startsWith("image/") == true
+        }
+    }
+    val videoFiles = remember(savedMediaFiles) {
+        savedMediaFiles.filter { uri ->
+            val mimeType = context.contentResolver.getType(uri)
+            mimeType?.startsWith("video/") == true
+        }
+    }
 
     Column {
+        Text(
+            text = "Saved Statuses",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .padding(top = 16.dp)
+                .align(Alignment.CenterHorizontally)
+        )
         TabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
                 Tab(
@@ -1080,17 +1135,17 @@ fun SavedScreen(
         }
         when (selectedTab) {
             0 -> SavedMediaGallery(
-                mediaFiles = savedMediaFiles.filter { it.toString().endsWith(".jpg", true) },
-                onMediaClick = { uri ->
-                    // Navigate to image preview
+                mediaFiles = imageFiles,
+                onMediaClick = { index ->
+                    navController.navigate(DetailsScreen.ImagePreview.createRoute(index, false))
                 },
                 isImage = true
             )
 
             1 -> SavedMediaGallery(
-                mediaFiles = savedMediaFiles.filter { it.toString().endsWith(".mp4", true) },
-                onMediaClick = { uri ->
-                    // Play video
+                mediaFiles = videoFiles,
+                onMediaClick = { index ->
+                    navController.navigate(DetailsScreen.VideoPreview.createRoute(index, false))
                 },
                 isImage = false
             )
@@ -1101,7 +1156,7 @@ fun SavedScreen(
 @Composable
 fun SavedMediaGallery(
     mediaFiles: List<Uri>,
-    onMediaClick: (Uri) -> Unit,
+    onMediaClick: (Int) -> Unit,
     isImage: Boolean
 ) {
     if (mediaFiles.isEmpty()) {
@@ -1118,9 +1173,10 @@ fun SavedMediaGallery(
             modifier = Modifier.fillMaxSize()
         ) {
             itemsIndexed(mediaFiles) { index, uri ->
+                Log.d("SavedMediaGallery", "Displaying item $index: $uri")
                 SavedStatusItem(
                     uri = uri,
-                    onClick = { onMediaClick(uri) },
+                    onClick = { onMediaClick(index) },
                     isVideo = !isImage
                 )
             }
