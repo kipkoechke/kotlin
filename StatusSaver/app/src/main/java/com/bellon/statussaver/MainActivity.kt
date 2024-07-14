@@ -47,6 +47,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -250,7 +251,8 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                     viewModel.saveMedia(uri, isVideo)
                 },
                 isMediaSaved = { uri -> viewModel.isMediaSaved(uri) },
-                navController = navController
+                navController = navController,
+                viewModel = viewModel
             )
         }
     }
@@ -313,14 +315,16 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
 
 @Composable
 fun WhatsAppStatusApp(
+    viewModel: MediaViewModel,
     whatsAppStatusUri: Uri?,
     onRequestAccess: () -> Unit,
     mediaFiles: StateFlow<List<Uri>>,
     savedMediaFiles: StateFlow<List<Uri>>,
     onSaveMedia: (Uri, Boolean) -> Unit,
     isMediaSaved: (Uri) -> Boolean,
-    navController: NavHostController
-) {
+    navController: NavHostController,
+
+    ) {
     val currentMediaFiles by mediaFiles.collectAsState()
     val currentSavedMediaFiles by savedMediaFiles.collectAsState()
     val context = LocalContext.current
@@ -440,6 +444,15 @@ fun WhatsAppStatusApp(
                         isMediaSaved = isMediaSaved,
                         onSave = if (isStatus) {
                             { uri -> onSaveMedia(uri, false) }
+                        } else null,
+                        onDelete = if (!isStatus) {
+                            { uri ->
+                                viewModel.deleteMedia(uri) {
+                                    if (imageFiles.size == 1) {
+                                        navController.navigateUp()
+                                    }
+                                }
+                            }
                         } else null
                     )
                 }
@@ -470,6 +483,15 @@ fun WhatsAppStatusApp(
                         isMediaSaved = isMediaSaved,
                         onSave = if (isStatus) {
                             { uri -> onSaveMedia(uri, true) }
+                        } else null,
+                        onDelete = if (!isStatus) {
+                            { uri ->
+                                viewModel.deleteMedia(uri) {
+                                    if (videoFiles.size == 1) {
+                                        navController.navigateUp()
+                                    }
+                                }
+                            }
                         } else null
                     )
                 }
@@ -477,6 +499,7 @@ fun WhatsAppStatusApp(
         }
     }
 }
+
 
 enum class DestinationScreen {
     STATUS, SAVED, SETTINGS, IMAGE_PREVIEW, VIDEO_PREVIEW
@@ -737,6 +760,20 @@ class MediaViewModel(private val appContext: Context) : ViewModel() {
         return savedMediaManager.isMediaSaved(uri)
     }
 
+    fun deleteMedia(uri: Uri, onDeleteComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                appContext.contentResolver.delete(uri, null, null)
+                refreshSavedMedia()
+                withContext(Dispatchers.Main) {
+                    onDeleteComplete()
+                }
+            } catch (e: Exception) {
+                Log.e("MediaViewModel", "Error deleting media", e)
+            }
+        }
+    }
+
     private suspend fun getSavedMediaFromGallery(): List<Uri> = withContext(Dispatchers.IO) {
         val mediaList = mutableListOf<Uri>()
         val projection = arrayOf(
@@ -861,29 +898,63 @@ fun ImagePreview(
     initialPage: Int,
     onDismiss: () -> Unit,
     onSave: ((Uri) -> Unit)? = null,
+    onDelete: ((Uri) -> Unit)? = null,
     isMediaSaved: (Uri) -> Boolean
 ) {
     val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { imageUris.size })
-    val currentUri = imageUris[pagerState.currentPage]
+    var currentUris by remember { mutableStateOf(imageUris) }
+    var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, currentUris.size - 1)) }
+
+    val pagerState = rememberPagerState(initialPage = currentPage) { currentUris.size }
+
+    LaunchedEffect(currentUris) {
+        if (currentUris.isEmpty()) {
+            onDismiss()
+        } else if (currentPage >= currentUris.size) {
+            currentPage = currentUris.size - 1
+            pagerState.scrollToPage(currentPage)
+        }
+    }
+
+    if (currentUris.isEmpty()) {
+        return
+    }
+
+    val currentUri = currentUris[currentPage]
     var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
 
-    val items = remember(isSaved) {
+    val items = remember(isSaved, currentUri) {
         listOf(
             RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
             RepostShareAndSaveItem(Icons.Default.Share, "Share"),
-            RepostShareAndSaveItem(
-                if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                if (isSaved) "Saved" else "Save",
-                onClick = {
-                    if (onSave != null && !isSaved) {
-                        onSave(currentUri)
-                        isSaved = true
+            if (onDelete != null)
+                RepostShareAndSaveItem(
+                    Icons.Default.Delete,
+                    "Delete",
+                    onClick = {
+                        onDelete(currentUri)
+                        currentUris = currentUris.filter { it != currentUri }
+                        if (currentUris.isEmpty()) {
+                            onDismiss()
+                        } else {
+                            currentPage = currentPage.coerceAtMost(currentUris.size - 1)
+                        }
                     }
-                }
-            )
+                )
+            else
+                RepostShareAndSaveItem(
+                    if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                    if (isSaved) "Saved" else "Save",
+                    onClick = {
+                        if (onSave != null && !isSaved) {
+                            onSave(currentUri)
+                            isSaved = true
+                        }
+                    }
+                )
         )
     }
+
 
     Column {
         Row(
@@ -909,13 +980,19 @@ fun ImagePreview(
         ) { page ->
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(imageUris[page])
+                    .data(currentUris[page])
                     .crossfade(true)
                     .build(),
                 contentDescription = "Full-screen image",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.currentPage }.collect { page ->
+                currentPage = page
+            }
         }
 
         Row(
@@ -955,28 +1032,62 @@ fun VideoPreview(
     initialPage: Int,
     onDismiss: () -> Unit,
     onSave: ((Uri) -> Unit)? = null,
+    onDelete: ((Uri) -> Unit)? = null,
     isMediaSaved: (Uri) -> Boolean
 ) {
     val context = LocalContext.current
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { videoUris.size })
-    val currentUri = videoUris[pagerState.currentPage]
+    var currentUris by remember { mutableStateOf(videoUris) }
+    var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, currentUris.size - 1)) }
+    val pagerState = rememberPagerState(initialPage = currentPage) { currentUris.size }
+
+    LaunchedEffect(currentUris) {
+        if (currentUris.isEmpty()) {
+            onDismiss()
+        } else if (currentPage >= currentUris.size) {
+            currentPage = currentUris.size - 1
+            pagerState.scrollToPage(currentPage)
+        }
+    }
+
+    if (currentUris.isEmpty()) {
+        return
+    }
+
+    val currentUri = currentUris[currentPage]
     var isSaved by remember(currentUri) { mutableStateOf(isMediaSaved(currentUri)) }
-    val items = remember(isSaved) {
+
+    val items = remember(isSaved, currentUri) {
         listOf(
             RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
             RepostShareAndSaveItem(Icons.Default.Share, "Share"),
-            RepostShareAndSaveItem(
-                if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                if (isSaved) "Saved" else "Save",
-                onClick = {
-                    if (onSave != null && !isSaved) {
-                        onSave(currentUri)
-                        isSaved = true
+            if (onDelete != null)
+                RepostShareAndSaveItem(
+                    Icons.Default.Delete,
+                    "Delete",
+                    onClick = {
+                        onDelete(currentUri)
+                        currentUris = currentUris.filter { it != currentUri }
+                        if (currentUris.isEmpty()) {
+                            onDismiss()
+                        } else {
+                            currentPage = currentPage.coerceAtMost(currentUris.size - 1)
+                        }
                     }
-                }
-            )
+                )
+            else
+                RepostShareAndSaveItem(
+                    if (isSaved) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
+                    if (isSaved) "Saved" else "Save",
+                    onClick = {
+                        if (onSave != null && !isSaved) {
+                            onSave(currentUri)
+                            isSaved = true
+                        }
+                    }
+                )
         )
     }
+
 
     // Create a map to cache ExoPlayers
     val exoPlayerCache = remember { mutableMapOf<Uri, ExoPlayer>() }
@@ -1041,7 +1152,7 @@ fun VideoPreview(
                 .weight(1f)
         ) { page ->
             Box(modifier = Modifier.fillMaxSize()) {
-                val uri = videoUris[page]
+                val uri = currentUris[page]
                 val player = getOrCreateExoPlayer(uri)
 
                 AndroidView(
@@ -1054,6 +1165,12 @@ fun VideoPreview(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+        }
+
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.currentPage }.collect { page ->
+                currentPage = page
             }
         }
 
