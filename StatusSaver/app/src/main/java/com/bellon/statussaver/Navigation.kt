@@ -2,6 +2,7 @@ package com.bellon.statussaver
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -16,7 +17,7 @@ sealed class Screen(
     val title: String
 ) {
     object Status :
-        Screen("status", Icons.Default.ShoppingCart, Icons.Outlined.FavoriteBorder, "Status")
+        Screen("status", Icons.Default.Home, Icons.Outlined.FavoriteBorder, "Status")
 
     object Saved :
         Screen("saved", Icons.AutoMirrored.Filled.ExitToApp, Icons.Outlined.Info, "Saved")

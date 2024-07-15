@@ -2,6 +2,7 @@
 
 package com.bellon.statussaver
 
+import android.annotation.SuppressLint
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -15,6 +16,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.storage.StorageManager
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -37,6 +40,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -115,6 +119,15 @@ import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.bellon.statussaver.models.BottomNavigationItem
+import com.facebook.ads.Ad
+import com.facebook.ads.AdError
+import com.facebook.ads.AdSettings
+import com.facebook.ads.AdSize
+import com.facebook.ads.AdView
+import com.facebook.ads.AudienceNetworkAds
+import com.facebook.ads.InterstitialAd
+import com.facebook.ads.InterstitialAdListener
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -169,6 +182,7 @@ class SavedMediaManager(private val context: Context) {
     }
 }
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity(), LifecycleObserver {
     private var whatsAppStatusUri by mutableStateOf<Uri?>(null)
     private val _mediaFiles = MutableStateFlow<List<Uri>>(emptyList())
@@ -180,7 +194,6 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
             }
         }
     }
-
     private lateinit var mediaPreferencesManager: MediaPreferencesManager
 
     private val requestDirectoryAccess =
@@ -216,8 +229,13 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         }
     }
 
+    private lateinit var interstitialAdManager: InterstitialAdManager
+
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun onCreate(savedInstanceState: Bundle?) {
+        AdSettings.addTestDevice("0ddd78bc-ccdb-46e6-bde6-d680721d5ab5");
+        AudienceNetworkAds.initialize(this)
+        interstitialAdManager = InterstitialAdManager(this)
         super.onCreate(savedInstanceState)
         lifecycle.addObserver(lifecycleObserver)
 
@@ -263,6 +281,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     override fun onDestroy() {
         super.onDestroy()
         lifecycle.removeObserver(lifecycleObserver)
+        interstitialAdManager.destroy()
     }
 
     override fun onPause() {
@@ -316,6 +335,110 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
 
 }
 
+val routesWithoutBottomBar = listOf(
+    DetailsScreen.ImagePreview.route,
+    DetailsScreen.VideoPreview.route
+)
+
+@Composable
+fun FacebookBannerAd(
+    placementId: String,
+    modifier: Modifier = Modifier
+) {
+    var adView: AdView? by remember { mutableStateOf(null) }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            AdView(context, placementId, AdSize.BANNER_HEIGHT_50).also {
+                adView = it
+                it.loadAd()
+            }
+        }
+    )
+
+    DisposableEffect(Unit) {
+        onDispose {
+            adView?.destroy()
+        }
+    }
+}
+
+
+class InterstitialAdManager(private val context: Context) {
+    private var interstitialAd: InterstitialAd? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val adDisplayDelay = 1 * 60 * 1000L // 2 minutes in milliseconds
+
+    init {
+        loadAd()
+        scheduleAdDisplay()
+    }
+
+    private fun loadAd() {
+        interstitialAd = InterstitialAd(context, "1789621541486018_1796481997466639")
+        val interstitialAdListener = object : InterstitialAdListener {
+            override fun onInterstitialDisplayed(ad: Ad) {
+                Log.d(TAG, "Interstitial ad displayed.")
+            }
+
+            override fun onInterstitialDismissed(ad: Ad) {
+                Log.d(TAG, "Interstitial ad dismissed.")
+                loadAd() // Reload the ad for next time
+            }
+
+            override fun onError(ad: Ad, adError: AdError) {
+                Log.e(TAG, "Interstitial ad failed to load: ${adError.errorMessage}")
+            }
+
+            override fun onAdLoaded(ad: Ad) {
+                Log.d(TAG, "Interstitial ad is loaded and ready to be displayed!")
+            }
+
+            override fun onAdClicked(ad: Ad) {
+                Log.d(TAG, "Interstitial ad clicked!")
+            }
+
+            override fun onLoggingImpression(ad: Ad) {
+                Log.d(TAG, "Interstitial ad impression logged!")
+            }
+        }
+
+        interstitialAd?.loadAd(
+            interstitialAd?.buildLoadAdConfig()
+                ?.withAdListener(interstitialAdListener)
+                ?.build()
+        )
+    }
+
+    private fun scheduleAdDisplay() {
+        handler.postDelayed({
+            showAd()
+        }, adDisplayDelay)
+    }
+
+    fun showAd() {
+        interstitialAd?.let { ad ->
+            if (ad.isAdLoaded && !ad.isAdInvalidated) {
+                ad.show()
+            } else {
+                Log.d(TAG, "Interstitial ad not ready to show.")
+                loadAd() // Try to load a new ad
+            }
+        }
+    }
+
+    fun destroy() {
+        handler.removeCallbacksAndMessages(null)
+        interstitialAd?.destroy()
+    }
+
+    companion object {
+        private const val TAG = "InterstitialAdManager"
+    }
+}
+
+@SuppressLint("ResourceAsColor")
 @Composable
 fun WhatsAppStatusApp(
     viewModel: MediaViewModel,
@@ -333,60 +456,75 @@ fun WhatsAppStatusApp(
     val context = LocalContext.current
     Scaffold(
         bottomBar = {
-            if (whatsAppStatusUri != null) {
-                NavigationBar {
-                    val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route
-                    var selectedItemIndex by rememberSaveable { mutableStateOf(0) }
-                    val items = listOf(
-                        BottomNavigationItem(
-                            title = Screen.Status.title,
-                            selectedIcon = Screen.Status.selectedIcon,
-                            unselectedIcon = Screen.Status.unselectedIcon,
-                            hasCount = false
-                        ),
-                        BottomNavigationItem(
-                            title = Screen.Saved.title,
-                            selectedIcon = Screen.Saved.selectedIcon,
-                            unselectedIcon = Screen.Saved.unselectedIcon,
-                            hasCount = false,
-                        ),
-                        BottomNavigationItem(
-                            title = Screen.Settings.title,
-                            selectedIcon = Screen.Settings.selectedIcon,
-                            unselectedIcon = Screen.Settings.unselectedIcon,
-                            hasCount = false
+            Column {
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
+                if (whatsAppStatusUri != null && currentRoute !in routesWithoutBottomBar) {
+                    NavigationBar(
+                        modifier = Modifier.height(64.dp),
+                        containerColor = colorResource(id = R.color.colorInactiveItemNight)
+                    ) {
+                        var selectedItemIndex by rememberSaveable { mutableStateOf(0) }
+                        val items = listOf(
+                            BottomNavigationItem(
+                                title = Screen.Status.title,
+                                selectedIcon = Screen.Status.selectedIcon,
+                                unselectedIcon = Screen.Status.unselectedIcon,
+                                hasCount = false
+                            ),
+                            BottomNavigationItem(
+                                title = Screen.Saved.title,
+                                selectedIcon = Screen.Saved.selectedIcon,
+                                unselectedIcon = Screen.Saved.unselectedIcon,
+                                hasCount = false,
+                            ),
+                            BottomNavigationItem(
+                                title = Screen.Settings.title,
+                                selectedIcon = Screen.Settings.selectedIcon,
+                                unselectedIcon = Screen.Settings.unselectedIcon,
+                                hasCount = false
+                            )
                         )
-                    )
-                    items.forEachIndexed { index, item ->
-                        NavigationBarItem(
-                            colors = NavigationBarItemDefaults.colors()
-                                .copy(selectedIndicatorColor = Color.Transparent),
-                            icon = {
-                                if (item.hasCount) {
-                                    BadgedBox(badge = { Badge { Text(text = item.badgeCount.toString()) } }) {
+                        items.forEachIndexed { index, item ->
+                            NavigationBarItem(
+                                colors = NavigationBarItemDefaults.colors()
+                                    .copy(selectedIndicatorColor = Color.Transparent),
+                                icon = {
+                                    if (item.hasCount) {
+                                        BadgedBox(badge = { Badge { Text(text = item.badgeCount.toString()) } }) {
+                                            Icon(
+                                                imageVector = if (selectedItemIndex == index) item.selectedIcon else item.unselectedIcon,
+                                                contentDescription = item.title
+                                            )
+                                        }
+                                    } else {
                                         Icon(
                                             imageVector = if (selectedItemIndex == index) item.selectedIcon else item.unselectedIcon,
                                             contentDescription = item.title
                                         )
                                     }
-                                } else {
-                                    Icon(
-                                        imageVector = if (selectedItemIndex == index) item.selectedIcon else item.unselectedIcon,
-                                        contentDescription = item.title
-                                    )
+                                },
+                                label = {
+                                    Text(text = item.title)
+                                },
+                                selected = selectedItemIndex == index,
+                                onClick = {
+                                    selectedItemIndex = index
+                                    navController.navigate(DestinationScreen.entries[index].name)
                                 }
-                            },
-                            label = {
-                                Text(text = item.title)
-                            },
-                            selected = selectedItemIndex == index,
-                            onClick = {
-                                selectedItemIndex = index
-                                navController.navigate(DestinationScreen.entries[index].name)
-                            }
-                        )
+                            )
+                        }
                     }
+                }
+                Box(
+                    modifier = Modifier
+                        .height(50.dp)
+                        .fillMaxWidth()
+                ) {
+                    FacebookBannerAd(
+                        placementId = "IMG_16_9_APP_INSTALL#1789621541486018_1796481920799980",
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }

@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    kotlin("kapt")
+    alias(libs.plugins.dagger.hilt.android)
 }
 
 android {
@@ -50,7 +52,6 @@ android {
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -78,4 +79,13 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.exoplayer.smoothstreaming)
     implementation (libs.androidx.media)
+
+    // Dagger Hilt
+    implementation(libs.com.hilt.android)
+    kapt(libs.com.hilt.android.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // Meta Ads
+    implementation(libs.androidx.annotation)
+    implementation (libs.audience.network.sdk)
 }
