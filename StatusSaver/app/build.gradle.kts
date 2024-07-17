@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.hilt.work)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -78,7 +79,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.exoplayer.smoothstreaming)
-    implementation (libs.androidx.media)
+    implementation(libs.androidx.media)
 
     // Dagger Hilt
     implementation(libs.com.hilt.android)
@@ -87,5 +88,25 @@ dependencies {
 
     // Meta Ads
     implementation(libs.androidx.annotation)
-    implementation (libs.audience.network.sdk)
+    implementation(libs.audience.network.sdk)
+
+    // Gson
+    implementation(libs.gson)
+
+    implementation(libs.coil.video)
+
+    implementation(libs.androidx.hilt.common)
+
+    // Worker
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation (libs.androidx.work.runtime)
+
+    implementation("com.google.dagger:hilt-android:2.51")
+    kapt("com.google.dagger:hilt-compiler:2.51")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    kapt("androidx.hilt:hilt-compiler:1.2.0")
+    kapt("com.google.dagger:hilt-android-compiler:2.51")
+    implementation("androidx.hilt:hilt-navigation-fragment:1.1.0")
+    implementation ("androidx.work:work-runtime-ktx:2.9.0")
+
 }

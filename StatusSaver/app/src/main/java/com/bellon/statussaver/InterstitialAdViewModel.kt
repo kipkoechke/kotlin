@@ -20,7 +20,7 @@ class InterstitialAdViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private fun loadAd() {
-        interstitialAd = InterstitialAd(getApplication(), "1789621541486018_1796481997466639")
+        interstitialAd = InterstitialAd(getApplication(), "1933718153761687_1933718947094941")
 
         val interstitialAdListener = object : InterstitialAdListener {
             override fun onInterstitialDisplayed(ad: Ad) {}
