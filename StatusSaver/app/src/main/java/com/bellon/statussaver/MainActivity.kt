@@ -2,6 +2,7 @@
 
 package com.bellon.statussaver
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -34,8 +35,6 @@ import com.facebook.ads.AdSettings
 import com.facebook.ads.AudienceNetworkAds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import android.Manifest
-import androidx.core.app.ActivityCompat
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity(), LifecycleObserver {
@@ -43,7 +42,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     private val viewModel: MediaViewModel by viewModels()
     private lateinit var mediaUpdateReceiver: BroadcastReceiver
     private lateinit var interstitialAdManager: InterstitialAdManager
-    private  val PERMISSION_REQUEST_CODE = 1001
+    private val PERMISSION_REQUEST_CODE = 1001
 
     private val requestDirectoryAccess =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -79,7 +78,10 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                 checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED
             ) {
                 requestPermissions(
-                    arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO),
+                    arrayOf(
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO
+                    ),
                     PERMISSION_REQUEST_CODE
                 )
             } else {
@@ -153,8 +155,6 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                 WhatsAppStatusApp(
                     whatsAppStatusUri = whatsAppStatusUri,
                     onRequestAccess = { requestWhatsAppStatusAccess() },
-                    mediaFiles = viewModel.mediaFiles,
-                    savedMediaFiles = viewModel.savedMediaFiles,
                     onSaveMedia = { uri, isVideo ->
                         Log.d("MainActivity", "Saving media: $uri, isVideo: $isVideo")
                         viewModel.saveMedia(uri, isVideo)

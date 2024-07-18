@@ -2,12 +2,15 @@ package com.bellon.statussaver
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +37,7 @@ import androidx.navigation.navArgument
 import coil.ImageLoader
 import com.bellon.statussaver.ads.FacebookBannerAd
 import com.bellon.statussaver.models.BottomNavigationItem
+import com.bellon.statussaver.ui.screens.EmptyStateScreen
 import com.bellon.statussaver.ui.screens.ImagePreview
 import com.bellon.statussaver.ui.screens.MediaViewModel
 import com.bellon.statussaver.ui.screens.RequestAccessScreen
@@ -40,7 +45,6 @@ import com.bellon.statussaver.ui.screens.SavedScreen
 import com.bellon.statussaver.ui.screens.SettingsScreen
 import com.bellon.statussaver.ui.screens.StatusScreen
 import com.bellon.statussaver.ui.screens.VideoPreview
-import kotlinx.coroutines.flow.StateFlow
 
 @SuppressLint("ResourceAsColor")
 @Composable
@@ -48,15 +52,14 @@ fun WhatsAppStatusApp(
     viewModel: MediaViewModel,
     whatsAppStatusUri: Uri?,
     onRequestAccess: () -> Unit,
-    mediaFiles: StateFlow<List<Uri>>,
-    savedMediaFiles: StateFlow<List<Uri>>,
     onSaveMedia: (Uri, Boolean) -> Unit,
     isMediaSaved: (Uri) -> Boolean,
     navController: NavHostController,
     imageLoader: ImageLoader
 ) {
-    val currentMediaFiles by mediaFiles.collectAsState()
-    val currentSavedMediaFiles by savedMediaFiles.collectAsState()
+    val currentMediaFiles by viewModel.mediaFiles.collectAsState()
+    val currentSavedMediaFiles by viewModel.savedMediaFiles.collectAsState()
+    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
@@ -137,6 +140,15 @@ fun WhatsAppStatusApp(
             composable(Screen.Status.route) {
                 if (whatsAppStatusUri == null) {
                     RequestAccessScreen(onRequestAccess)
+                } else if (isInitialLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (currentMediaFiles.isEmpty()) {
+                    EmptyStateScreen("No status updates found")
                 } else {
                     StatusScreen(
                         mediaFiles = currentMediaFiles,

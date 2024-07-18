@@ -37,28 +37,29 @@ class MediaViewModel @Inject constructor(
     private val savedMediaManager: SavedMediaManager
 ) : ViewModel() {
 
+    private val _isInitialLoading = MutableStateFlow(true)
+    val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
+
     private val _mediaFiles = MutableStateFlow<List<Uri>>(emptyList())
     val mediaFiles: StateFlow<List<Uri>> = _mediaFiles.asStateFlow()
 
     private val _savedMediaFiles = MutableStateFlow<List<Uri>>(emptyList())
     val savedMediaFiles: StateFlow<List<Uri>> = _savedMediaFiles.asStateFlow()
 
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
     private var backgroundRefreshJob: Job? = null
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            refreshSavedMedia()
+            initialLoad()
         }
-        loadSavedMediaDetails()
         startBackgroundRefresh()
     }
 
-    fun loadSavedMediaDetails() {
-        val savedDetails = mediaPreferencesManager.getMediaDetails()
-        _mediaFiles.value = savedDetails.map { Uri.parse(it.uri) }
+    private suspend fun initialLoad() {
+        refreshSavedMedia()
+        loadSavedMediaDetails()
+        refreshMediaFiles()
+        _isInitialLoading.value = false
     }
 
     private fun startBackgroundRefresh() {
@@ -73,7 +74,6 @@ class MediaViewModel @Inject constructor(
 
     private suspend fun refreshMediaFiles() {
         try {
-            _isLoading.value = true
             val files = getWhatsAppStatusFilesUseCase()
             if (files != _mediaFiles.value) {
                 _mediaFiles.value = files
@@ -81,8 +81,13 @@ class MediaViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("MediaViewModel", "Error refreshing media files", e)
-        } finally {
-            _isLoading.value = false
+        }
+    }
+
+    fun loadSavedMediaDetails() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val savedDetails = mediaPreferencesManager.getMediaDetails()
+            _mediaFiles.value = savedDetails.map { Uri.parse(it.uri) }
         }
     }
 
@@ -112,7 +117,6 @@ class MediaViewModel @Inject constructor(
                     refreshSavedMedia()
                 }
             }
-
         }
     }
 
@@ -137,6 +141,6 @@ class MediaViewModel @Inject constructor(
     }
 
     companion object {
-        private const val REFRESH_DELAY = 500L // 500 milliseconds delay between refreshes
+        private const val REFRESH_DELAY = 500L
     }
 }

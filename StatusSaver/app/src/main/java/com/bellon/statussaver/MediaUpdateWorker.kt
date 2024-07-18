@@ -5,7 +5,13 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.hilt.work.HiltWorker
-import androidx.work.*
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import com.bellon.statussaver.data.local.MediaFileDetails
 import com.bellon.statussaver.data.local.MediaPreferencesManager
 import com.bellon.statussaver.domain.usecases.GetWhatsAppStatusFilesUseCase
@@ -38,7 +44,7 @@ class MediaUpdateWorker @AssistedInject constructor(
 
             Log.d("MediaUpdateWorker", "Updated ${updatedFiles.size} media files")
 
-            val intent = Intent("com.yourapplication.ACTION_MEDIA_UPDATED")
+            val intent = Intent("com.bellon.statussaver.ACTION_MEDIA_UPDATED")
             applicationContext.sendBroadcast(intent)
 
             Result.success()
