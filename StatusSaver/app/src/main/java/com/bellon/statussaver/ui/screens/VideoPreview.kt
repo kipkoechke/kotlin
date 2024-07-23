@@ -6,8 +6,15 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +27,18 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -32,19 +46,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.bellon.statussaver.RepostShareAndSaveItem
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalFoundationApi::class)
@@ -56,7 +79,8 @@ fun VideoPreview(
     onDismiss: () -> Unit,
     onSave: ((Uri) -> Unit)? = null,
     onDelete: ((Uri) -> Unit)? = null,
-    isMediaSaved: (Uri) -> Boolean
+    isMediaSaved: (Uri) -> Boolean,
+    isInterrupted: Boolean = false
 ) {
     if (videoUris.isEmpty()) {
         onDismiss()
@@ -68,6 +92,38 @@ fun VideoPreview(
     var currentPage by remember { mutableStateOf(initialPage.coerceIn(0, currentUris.size - 1)) }
 
     val pagerState = rememberPagerState(initialPage = currentPage) { currentUris.size }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val isAppInForeground = remember { mutableStateOf(true) }
+    val coroutineScope = rememberCoroutineScope()
+    var showControls by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+    var autoHideJob by remember { mutableStateOf<Job?>(null) }
+    var shouldPlay by remember { mutableStateOf(true) }
+
+    fun showControlsWithTimer() {
+        showControls = true
+        autoHideJob?.cancel()
+        autoHideJob = coroutineScope.launch {
+            delay(3000) // Hide controls after 3 seconds
+            showControls = false
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> isAppInForeground.value = false
+                Lifecycle.Event.ON_START -> isAppInForeground.value = true
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(currentUris) {
         if (currentUris.isEmpty()) {
@@ -135,12 +191,12 @@ fun VideoPreview(
                 .setOnAudioFocusChangeListener { focusChange ->
                     when (focusChange) {
                         AudioManager.AUDIOFOCUS_GAIN -> {
-                            exoPlayerCache.values.forEach { it.play() }
+                            exoPlayerCache[currentUris[currentPage]]?.play()
                         }
 
                         AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
                         AudioManager.AUDIOFOCUS_LOSS -> {
-                            exoPlayerCache.values.forEach { it.pause() }
+                            exoPlayerCache[currentUris[currentPage]]?.pause()
                         }
                     }
                 }
@@ -161,8 +217,7 @@ fun VideoPreview(
                     null,
                     AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN
-                ) ==
-                        AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             }
         }
     }
@@ -179,6 +234,25 @@ fun VideoPreview(
         }
     }
 
+    // Function to navigate to the next video
+    val navigateToNextVideo: () -> Unit = remember {
+        {
+            val nextPage = (currentPage + 1) % currentUris.size
+            coroutineScope.launch {
+                pagerState.animateScrollToPage(nextPage)
+            }
+        }
+    }
+
+    // Function to navigate to the previous video
+    val navigateToPreviousVideo: () -> Unit = remember {
+        {
+            val previousPage = (currentPage - 1 + currentUris.size) % currentUris.size
+            coroutineScope.launch {
+                pagerState.animateScrollToPage(previousPage)
+            }
+        }
+    }
 
     // Function to get or create an ExoPlayer for a given URI
     val getOrCreateExoPlayer = remember<(Uri) -> ExoPlayer> {
@@ -192,6 +266,13 @@ fun VideoPreview(
                             when (state) {
                                 Player.STATE_ENDED -> {
                                     abandonAudioFocus()
+                                    // Play next video
+                                    val nextPage = (currentPage + 1) % currentUris.size
+                                    if (nextPage != currentPage) {
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(nextPage)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -201,14 +282,30 @@ fun VideoPreview(
         }
     }
 
-    // Handle page changes
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            val current = videoUris[page]
-            val player = getOrCreateExoPlayer(current)
+    fun updatePlaybackState(play: Boolean) {
+        shouldPlay = play
+        val currentPlayer = exoPlayerCache[currentUris[currentPage]]
+        if (play) {
             if (requestAudioFocus()) {
-                player.playWhenReady = true
+                currentPlayer?.play()
             }
+        } else {
+            currentPlayer?.pause()
+            abandonAudioFocus()
+        }
+    }
+
+    LaunchedEffect(isInterrupted) {
+        updatePlaybackState(!isInterrupted && isAppInForeground.value)
+    }
+
+    // Handle page changes
+    LaunchedEffect(pagerState, isAppInForeground.value, shouldPlay) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            currentPage = page
+            val current = currentUris.getOrNull(page) ?: return@collect
+            val player = getOrCreateExoPlayer(current)
+            updatePlaybackState(isAppInForeground.value && shouldPlay)
 
             // Pause other players
             exoPlayerCache.values.forEach {
@@ -219,21 +316,37 @@ fun VideoPreview(
         }
     }
 
+    // An effect to pause all players when app goes to background
+    LaunchedEffect(isAppInForeground.value) {
+        updatePlaybackState(isAppInForeground.value && shouldPlay)
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000) // Update every second
+            val player = exoPlayerCache[currentUris[currentPage]]
+            if (player != null) {
+                currentPosition = player.currentPosition
+                duration = player.duration
+            }
+        }
+    }
+
     // Clean up ExoPlayers and audio focus when the composable is disposed
     DisposableEffect(Unit) {
         onDispose {
             exoPlayerCache.values.forEach { it.release() }
             exoPlayerCache.clear()
             abandonAudioFocus()
+            autoHideJob?.cancel()
         }
     }
 
-
-    Column {
+    Column(modifier = Modifier.background(Color.Black)) {
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                .padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
@@ -251,7 +364,11 @@ fun VideoPreview(
                 .fillMaxSize()
                 .weight(1f)
         ) { page ->
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { showControlsWithTimer() }
+            ) {
                 val uri = currentUris[page]
                 val player = getOrCreateExoPlayer(uri)
 
@@ -259,14 +376,86 @@ fun VideoPreview(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
                             this.player = player
-                            useController = true
-                            controllerAutoShow = true
+                            useController = false
                         }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Custom controls overlay
+                AnimateView(
+                    visible = showControls,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures { showControlsWithTimer() }
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .background(Color.Transparent)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            // Control buttons
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                IconButton(onClick = navigateToPreviousVideo) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowBack,
+                                        contentDescription = "Previous video",
+                                        tint = Color.White
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        updatePlaybackState(!shouldPlay)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (shouldPlay) Icons.Default.Place else Icons.Default.PlayArrow,
+                                        contentDescription = if (shouldPlay) "Pause" else "Play",
+                                        tint = Color.White
+                                    )
+                                }
+
+                                IconButton(onClick = navigateToNextVideo) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowForward,
+                                        contentDescription = "Next video",
+                                        tint = Color.White
+                                    )
+                                }
+                            }
+
+                            // Time display
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = formatDuration(currentPosition), color = Color.White)
+                                // Progress bar
+                                Slider(
+                                    value = currentPosition.toFloat(),
+                                    onValueChange = { player.seekTo(it.toLong()) },
+                                    valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(text = formatDuration(duration), color = Color.White)
+                            }
+                        }
+                    }
+                }
             }
         }
+
 
         LaunchedEffect(pagerState) {
             snapshotFlow { pagerState.currentPage }.collect { page ->
@@ -302,5 +491,38 @@ fun VideoPreview(
                 }
             }
         }
+    }
+
+
+}
+
+// Helper function to format duration
+fun formatDuration(durationMs: Long): String {
+    val seconds = (durationMs / 1000) % 60
+    val minutes = (durationMs / (1000 * 60)) % 60
+    val hours = durationMs / (1000 * 60 * 60)
+
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
+    }
+}
+
+@Composable
+fun AnimateView(
+    modifier: Modifier = Modifier,
+    visible: Boolean, // This comes from the mutableState<Boolean>
+    enter: EnterTransition = fadeIn(),
+    exit: ExitTransition = fadeOut(),
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        modifier = modifier,
+        visible = visible,
+        enter = enter,
+        exit = exit
+    ) {
+        content()
     }
 }

@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,7 +56,8 @@ fun WhatsAppStatusApp(
     onSaveMedia: (Uri, Boolean) -> Unit,
     isMediaSaved: (Uri) -> Boolean,
     navController: NavHostController,
-    imageLoader: ImageLoader
+    imageLoader: ImageLoader,
+    isAdShowing: Boolean
 ) {
     val currentMediaFiles by viewModel.mediaFiles.collectAsState()
     val currentSavedMediaFiles by viewModel.savedMediaFiles.collectAsState()
@@ -231,6 +233,7 @@ fun WhatsAppStatusApp(
                         initialPage = videoIndex,
                         onDismiss = { navController.navigateUp() },
                         isMediaSaved = isMediaSaved,
+                        isInterrupted = isAdShowing,
                         onSave = if (isStatus) {
                             { uri -> onSaveMedia(uri, true) }
                         } else null,

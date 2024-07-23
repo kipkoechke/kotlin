@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     private lateinit var mediaUpdateReceiver: BroadcastReceiver
     private lateinit var interstitialAdManager: InterstitialAdManager
     private val PERMISSION_REQUEST_CODE = 1001
+    var isAdShowing by mutableStateOf(false)
 
     private val requestDirectoryAccess =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -162,7 +163,8 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                     isMediaSaved = { uri -> viewModel.isMediaSaved(uri) },
                     navController = navController,
                     viewModel = viewModel,
-                    imageLoader = imageLoader
+                    imageLoader = imageLoader,
+                    isAdShowing = isAdShowing
                 )
             }
         }
