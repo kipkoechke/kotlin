@@ -48,15 +48,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     private val requestDirectoryAccess =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             result.data?.data?.let { uri ->
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-                viewModel.setWhatsAppStatusUri(uri)
-                whatsAppStatusUri = uri
-                getSharedPreferences("WhatsAppStatus", Context.MODE_PRIVATE).edit()
-                    .putString("STATUS_URI", uri.toString())
-                    .apply()
+                handleNewUriPermission(uri)
             }
         }
 
@@ -73,6 +65,18 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         requestDirectoryAccess.launch(intent)
     }
 
+    private fun handleNewUriPermission(uri: Uri) {
+        contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+        viewModel.setWhatsAppStatusUri(uri)
+        whatsAppStatusUri = uri
+        getSharedPreferences("WhatsAppStatus", Context.MODE_PRIVATE).edit()
+            .putString("STATUS_URI", uri.toString())
+            .apply()
+    }
+
     private fun checkAndRequestPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED ||
@@ -86,10 +90,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                     PERMISSION_REQUEST_CODE
                 )
             } else {
-                // Permissions are already granted, refresh media
-                lifecycleScope.launch {
-                    viewModel.refreshSavedMedia()
-                }
+                checkWhatsAppStatusAccess()
             }
         } else {
             if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
@@ -98,11 +99,39 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
                     PERMISSION_REQUEST_CODE
                 )
             } else {
-                // Permission is already granted, refresh media
-                lifecycleScope.launch {
-                    viewModel.refreshSavedMedia()
-                }
+                checkWhatsAppStatusAccess()
             }
+        }
+    }
+
+    private fun checkWhatsAppStatusAccess() {
+        val savedUriString = getSharedPreferences("WhatsAppStatus", Context.MODE_PRIVATE)
+            .getString("STATUS_URI", null)
+
+        val isUriPermissionValid = savedUriString?.let {
+            checkUriPermission(Uri.parse(it))
+        } ?: false
+
+        if (isUriPermissionValid) {
+            whatsAppStatusUri = Uri.parse(savedUriString)
+            viewModel.setWhatsAppStatusUri(Uri.parse(savedUriString))
+            lifecycleScope.launch {
+                viewModel.refreshSavedMedia()
+            }
+        } else {
+            // Clear the saved URI as it's no longer valid
+            getSharedPreferences("WhatsAppStatus", Context.MODE_PRIVATE).edit().remove("STATUS_URI").apply()
+            whatsAppStatusUri = null
+            viewModel.setWhatsAppStatusUri(null)
+        }
+    }
+
+    private fun checkUriPermission(uri: Uri): Boolean {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        return try {
+            contentResolver.getPersistedUriPermissions().any { it.uri == uri && it.isReadPermission }
+        } catch (e: SecurityException) {
+            false
         }
     }
 
@@ -110,12 +139,6 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkAndRequestPermissions()
-        val savedUriString = getSharedPreferences("WhatsAppStatus", Context.MODE_PRIVATE)
-            .getString("STATUS_URI", null)
-        savedUriString?.let {
-            whatsAppStatusUri = Uri.parse(it)
-            viewModel.setWhatsAppStatusUri(Uri.parse(it))
-        }
 
         // Register a receiver to handle media updates
         mediaUpdateReceiver = object : BroadcastReceiver() {
@@ -174,8 +197,19 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
 
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch {
-            viewModel.refreshSavedMedia()
+        checkAndRequestPermissions()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                checkWhatsAppStatusAccess()
+            } else {
+                // Handle permission denied
+                whatsAppStatusUri = null
+                viewModel.setWhatsAppStatusUri(null)
+            }
         }
     }
 
@@ -185,7 +219,6 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         interstitialAdManager.destroy()
     }
 }
-
 val routesWithoutBottomBar = listOf(
     DetailsScreen.ImagePreview.route,
     DetailsScreen.VideoPreview.route
@@ -200,4 +233,3 @@ data class RepostShareAndSaveItem(
     val title: String,
     val onClick: () -> Unit = {}
 )
-
