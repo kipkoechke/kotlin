@@ -77,13 +77,13 @@ class MediaRepositoryImpl @Inject constructor(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         put(
                             MediaStore.MediaColumns.RELATIVE_PATH,
-                            Environment.DIRECTORY_PICTURES + "/Bellon Saver"
+                            Environment.DIRECTORY_PICTURES + "/Status Saver"
                         )
                         put(MediaStore.MediaColumns.IS_PENDING, 1)
                     } else {
                         val directory = File(
                             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                            "Bellon Saver"
+                            "Status Saver"
                         )
                         if (!directory.exists()) {
                             directory.mkdirs()
@@ -136,7 +136,7 @@ class MediaRepositoryImpl @Inject constructor(
             MediaStore.MediaColumns.MIME_TYPE
         )
         val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("%Bellon Saver%")  // Adjust this to match your app's save folder
+        val selectionArgs = arrayOf("%Status Saver%")
 
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)

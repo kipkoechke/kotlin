@@ -1,26 +1,39 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+
 package com.bellon.statussaver.ui.screens
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults.SecondaryIndicator
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.bellon.statussaver.DetailsScreen
 import com.bellon.statussaver.ui.screens.components.SavedMediaGallery
+import kotlinx.coroutines.launch
 
 @Composable
 fun SavedScreen(
@@ -28,11 +41,13 @@ fun SavedScreen(
     navController: NavHostController,
     onSaveMedia: (Uri, Boolean) -> Unit
 ) {
+    val tabs = listOf("Images", "Videos")
+    val pagerState = rememberPagerState(pageCount = { tabs.size }, initialPage = 0)
+    val coroutineScope = rememberCoroutineScope()
+
     val context = LocalContext.current
     Log.d("SavedScreen", "Received ${savedMediaFiles.size} saved media files")
 
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Images", "Videos")
 
     val imageFiles = remember(savedMediaFiles) {
         savedMediaFiles.filter { uri ->
@@ -46,41 +61,87 @@ fun SavedScreen(
             mimeType?.startsWith("video/") == true
         }
     }
-
-    Column {
-        Text(
-            text = "Saved Statuses",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .padding(top = 16.dp)
-                .align(Alignment.CenterHorizontally)
-        )
-        TabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    text = { Text(title) },
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index }
-                )
+    Scaffold(topBar = {
+        TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors()
+                .copy(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = Color.White),
+            title = { Text("Status Saver") },
+            actions = {
+                IconButton(
+                    onClick = {},
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share",
+                        tint = Color.White
+                    )
+                }
             }
-        }
-        when (selectedTab) {
-            0 -> SavedMediaGallery(
-                mediaFiles = imageFiles,
-                onMediaClick = { index ->
-                    navController.navigate(DetailsScreen.ImagePreview.createRoute(index, false))
-                },
-                isImage = true
-            )
+        )
+    }) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding)) {
+            TabRow(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                selectedTabIndex = pagerState.currentPage,
+                modifier = Modifier.fillMaxWidth(),
+                indicator = { tabPositions ->
+                    SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                        color = Color.White
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        text = {
+                            Text(
+                                text = title,
+                                color = if (pagerState.currentPage == index) Color.White else Color(0xFFBABABA)
+                            )
+                        },
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        }
+                    )
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> SavedMediaGallery(
+                        mediaFiles = imageFiles,
+                        onMediaClick = { index ->
+                            navController.navigate(
+                                DetailsScreen.ImagePreview.createRoute(
+                                    index,
+                                    false
+                                )
+                            )
+                        },
+                        isImage = true
+                    )
 
-            1 -> SavedMediaGallery(
-                mediaFiles = videoFiles,
-                onMediaClick = { index ->
-                    navController.navigate(DetailsScreen.VideoPreview.createRoute(index, false))
-                },
-                isImage = false
-            )
+                    1 -> SavedMediaGallery(
+                        mediaFiles = videoFiles,
+                        onMediaClick = { index ->
+                            navController.navigate(
+                                DetailsScreen.VideoPreview.createRoute(
+                                    index,
+                                    false
+                                )
+                            )
+                        },
+                        isImage = false
+                    )
+                }
+            }
+
         }
     }
 }
