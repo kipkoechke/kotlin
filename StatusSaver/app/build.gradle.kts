@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.bellon.statussaver"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.bellon.statussaver"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -42,7 +42,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.7"
     }
     packaging {
         resources {

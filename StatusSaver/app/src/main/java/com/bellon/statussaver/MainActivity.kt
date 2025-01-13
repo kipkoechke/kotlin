@@ -31,7 +31,6 @@ import coil.decode.VideoFrameDecoder
 import com.bellon.statussaver.ads.InterstitialAdManager
 import com.bellon.statussaver.ui.screens.MediaViewModel
 import com.bellon.statussaver.ui.theme.StatusSaverTheme
-import com.facebook.ads.AdSettings
 import com.facebook.ads.AudienceNetworkAds
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -157,7 +156,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         )
 
         // Initialize Facebook Ads SDK
-        AdSettings.addTestDevice("0ddd78bc-ccdb-46e6-bde6-d680721d5ab5");
+//        AdSettings.addTestDevice("e823d085-dce0-462a-bb85-ed889efe03b0");
         AudienceNetworkAds.initialize(this)
         interstitialAdManager = InterstitialAdManager(this)
 
@@ -219,6 +218,7 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
         interstitialAdManager.destroy()
     }
 }
+
 val routesWithoutBottomBar = listOf(
     DetailsScreen.ImagePreview.route,
     DetailsScreen.VideoPreview.route

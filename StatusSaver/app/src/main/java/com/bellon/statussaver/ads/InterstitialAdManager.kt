@@ -12,7 +12,9 @@ import com.facebook.ads.InterstitialAdListener
 class InterstitialAdManager(private val context: Context) {
     private var interstitialAd: InterstitialAd? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val adDisplayDelay = 1 * 60 * 1000L // 2 minutes in milliseconds
+    private val initialAdDelay = 15 * 1000L // 15 seconds for first ad
+    private val subsequentAdDelay = 30 * 1000L // 30 seconds for subsequent ads
+    private var isFirstAd = true
 
     init {
         loadAd()
@@ -24,15 +26,19 @@ class InterstitialAdManager(private val context: Context) {
         val interstitialAdListener = object : InterstitialAdListener {
             override fun onInterstitialDisplayed(ad: Ad) {
                 Log.d(TAG, "Interstitial ad displayed.")
+                isFirstAd = false
             }
 
             override fun onInterstitialDismissed(ad: Ad) {
                 Log.d(TAG, "Interstitial ad dismissed.")
                 loadAd() // Reload the ad for next time
+                scheduleAdDisplay() // Schedule next ad with subsequent delay
             }
 
             override fun onError(ad: Ad, adError: AdError) {
                 Log.e(TAG, "Interstitial ad failed to load: ${adError.errorMessage}")
+                // Retry loading after error
+                handler.postDelayed({ loadAd() }, 5000L) // Retry after 5 seconds
             }
 
             override fun onAdLoaded(ad: Ad) {
@@ -58,7 +64,7 @@ class InterstitialAdManager(private val context: Context) {
     private fun scheduleAdDisplay() {
         handler.postDelayed({
             showAd()
-        }, adDisplayDelay)
+        }, if (isFirstAd) initialAdDelay else subsequentAdDelay)
     }
 
     fun showAd() {
@@ -68,6 +74,7 @@ class InterstitialAdManager(private val context: Context) {
             } else {
                 Log.d(TAG, "Interstitial ad not ready to show.")
                 loadAd() // Try to load a new ad
+                scheduleAdDisplay() // Reschedule the display
             }
         }
     }

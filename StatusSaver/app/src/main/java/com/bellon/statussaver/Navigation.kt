@@ -1,29 +1,33 @@
 package com.bellon.statussaver
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
 
 sealed class Screen(
     val route: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
+    @DrawableRes val selectedIcon: Int,
+    @DrawableRes val unselectedIcon: Int,
     val title: String
 ) {
-    object Status :
-        Screen("status", Icons.Default.Home, Icons.Outlined.FavoriteBorder, "Status")
+    object Status : Screen(
+        "status",
+        R.drawable.circle_down_solid,
+        R.drawable.circle_down_thin,
+        "Status"
+    )
 
-    object Saved :
-        Screen("saved", Icons.AutoMirrored.Filled.ExitToApp, Icons.Outlined.Info, "Saved")
+    object Saved : Screen(
+        "saved",
+        R.drawable.floppy_disk_solid,
+        R.drawable.floppy_disk_thin,
+        "Saved"
+    )
 
-    object Settings :
-        Screen("settings", Icons.Default.Settings, Icons.Outlined.Settings, "Settings")
+    object Settings : Screen(
+        "settings",
+        R.drawable.gear_solid,
+        R.drawable.gear_thin,
+        "Settings"
+    )
 }
 
 sealed class DetailsScreen(val route: String) {

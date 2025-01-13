@@ -6,8 +6,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,7 +30,6 @@ import com.bellon.statussaver.ui.theme.StatusSaverTheme
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -51,6 +56,7 @@ class SplashActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SplashScreen(onDataLoaded: () -> Unit, viewModel: SplashViewModel) {
     val dataLoaded by viewModel.dataLoaded.collectAsState()
@@ -62,7 +68,12 @@ fun SplashScreen(onDataLoaded: () -> Unit, viewModel: SplashViewModel) {
     }
 
     // Your splash screen UI
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Column (modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = Icons.Default.ArrowDropDown,
+            contentDescription = "Save",
+            tint = Color.White
+        )
         Text("Status Saver", fontSize = 24.sp)
     }
 }
@@ -73,19 +84,21 @@ class SplashViewModel @Inject constructor(
     private val savedMediaManager: SavedMediaManager
 ) : ViewModel() {
     private val _dataLoaded = MutableStateFlow(false)
-    val dataLoaded: StateFlow<Boolean> = _dataLoaded.asStateFlow()
+    val dataLoaded = _dataLoaded.asStateFlow()
 
     init {
         loadInitialData()
     }
 
-    fun loadInitialData() {
+    private fun loadInitialData() {
         viewModelScope.launch {
             // Load saved media URIs
             val savedMediaUris = mediaPreferencesManager.getMediaUris()
 
             // Verify if the saved media still exists
-            val existingMediaUris = savedMediaUris.filter { savedMediaManager.isMediaSaved(it) }
+            val existingMediaUris = savedMediaUris.filter {
+                savedMediaManager.isMediaSaved(it)
+            }
 
             // Update the preferences with existing media
             mediaPreferencesManager.saveMediaUris(existingMediaUris)

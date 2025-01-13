@@ -1,11 +1,11 @@
 package com.bellon.statussaver.models
 
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
 
 data class BottomNavigationItem(
     val title: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
+    @DrawableRes val selectedIcon: Int,
+    @DrawableRes val unselectedIcon: Int,
     val hasCount: Boolean,
     val badgeCount: Int? = null
-)
+    )
