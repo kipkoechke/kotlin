@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity(), LifecycleObserver {
     var whatsAppStatusUri by mutableStateOf<Uri?>(null)
     private val viewModel: MediaViewModel by viewModels()
+    private val splashViewModel: SplashViewModel by viewModels()
     private lateinit var mediaUpdateReceiver: BroadcastReceiver
     private lateinit var interstitialAdManager: InterstitialAdManager
     private val PERMISSION_REQUEST_CODE = 1001
@@ -137,6 +139,12 @@ class MainActivity : ComponentActivity(), LifecycleObserver {
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Install splash screen
+        installSplashScreen().setKeepOnScreenCondition {
+            !splashViewModel.dataLoaded.value
+        }
+
         checkAndRequestPermissions()
 
         // Register a receiver to handle media updates

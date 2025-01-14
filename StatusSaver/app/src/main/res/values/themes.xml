@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
     <style name="Theme.StatusSaver" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.StatusSaver.Splash" parent="Theme.SplashScreen">
+        <!-- Set the splash screen background color -->
+        <item name="windowSplashScreenBackground">@color/colorPrimary</item>
+
+        <!-- Use app icon as splash screen icon -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+
+        <!-- Set splash screen animation duration -->
+        <item name="windowSplashScreenAnimationDuration">300</item>
+
+        <!-- Set the theme used after splash screen is shown -->
+        <item name="postSplashScreenTheme">@style/Theme.StatusSaver</item>
+    </style>
 </resources>

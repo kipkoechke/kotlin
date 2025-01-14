@@ -101,6 +101,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation (libs.androidx.work.runtime)
 
+    implementation ("androidx.core:core-splashscreen:1.0.1")
+
     implementation("com.google.dagger:hilt-android:2.51")
     kapt("com.google.dagger:hilt-compiler:2.51")
     implementation("androidx.hilt:hilt-work:1.2.0")

@@ -83,8 +83,8 @@ fun ImagePreview(
 
     val items = remember(isSaved, currentUri) {
         listOf(
-            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
-            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
+//            RepostShareAndSaveItem(Icons.Default.Favorite, "Repost"),
+//            RepostShareAndSaveItem(Icons.Default.Share, "Share"),
             if (onDelete != null)
                 RepostShareAndSaveItem(
                     Icons.Default.Delete,
@@ -127,7 +127,7 @@ fun ImagePreview(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back Arrow"
             )
-            Text(text = "Status Saver 💯")
+            Text(text = "Status Saver")
         }
 
         HorizontalPager(
@@ -154,7 +154,7 @@ fun ImagePreview(
         }
 
         Row(
-            horizontalArrangement = Arrangement.SpaceAround,
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
             modifier = modifier.fillMaxWidth()
         ) {
